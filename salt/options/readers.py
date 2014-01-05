@@ -32,6 +32,8 @@ class StringReader(BaseReader):
 
         parser.add_argument('-i', '--input-file',
                             help="Input file (only arff implemented at the moment)")
+        parser.add_argument('-r', '--regression',
+                            help="Is this a regression task?", action='store_true')
         parser.add_argument('-c', '--classifier', help="Classifier",
                             choices=AVAILABLE_CLASSIFIERS.keys(),
                             default=list(AVAILABLE_CLASSIFIERS.keys())[0])

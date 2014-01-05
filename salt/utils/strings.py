@@ -1,6 +1,7 @@
 """The :mod:`salt.utils.strings` module provides string formatting utilities."""
 
 from six import iteritems
+import time
 
 
 def format_dict(dictionary, separator="\n\t"):
@@ -11,3 +12,7 @@ def format_dict(dictionary, separator="\n\t"):
     """
     return "\t" + separator.join(["{key} = {value}".format(key=key, value=str(value))
                                   for (key, value) in iteritems(dictionary)])
+
+
+def now():
+    return time.strftime("<%T>")

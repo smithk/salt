@@ -1,13 +1,15 @@
 """Entry point for GUI and command line interface."""
 
 import sys as _sys
+import os as _os
 import itertools
 import numpy as np
 from .IO.readers import ArffReader
 from .utils.debug import log_step, Log
 from .utils.strings import format_dict
 from .options.readers import StringReader
-from .learn import DEFAULT_LEARNERS
+from .options import Settings
+from .learn import DEFAULT_CLASSIFIERS, DEFAULT_REGRESSORS
 from .gui.forms import SaltMain
 from .suggest import SuggestionTaskManager
 
@@ -33,10 +35,10 @@ def check_environment():
             'tkinter': tkinter_version}
 
 
-def load_dataset(file_path):
+def load_dataset(file_path, is_regression):
     if file_path:
         arff_reader = ArffReader(file_path)
-        dataset = arff_reader.read_file()
+        dataset = arff_reader.read_file(is_regression)
 
         return dataset
 
@@ -44,6 +46,16 @@ def load_dataset(file_path):
 def create_default_parameters(learners):
     parameter_dict = {learner.__name__: learner.create_default_params() for learner in learners}
     return parameter_dict
+
+
+def create_parameter_space(learners, settings):
+    parameter_dict = {learner.__name__: learner.create_parameter_space(settings) for learner in learners}
+    return parameter_dict
+
+
+def load_settings(options):
+    settings = Settings.load_or_create_config()
+    return settings
 
 
 def run_cmdline(options):
@@ -54,14 +66,21 @@ def run_cmdline(options):
     Log.write("Running [SALT] in command-line mode with options\n{options}".format(
         options=format_dict(options)))
 
+    settings = load_settings(options)
+
     # === Dataset ===
-    input_file = options['input_file']
-    dataset = load_dataset(input_file)
+    data_path = options['input_file']
+    is_regression = options['regression']
+    dataset = load_dataset(data_path, is_regression)
     if not dataset:
         return  # break?
+    dataset.initialize()
+
+    console_height, console_width = _os.popen('stty size', 'r').read().split()
+    np.set_printoptions(linewidth=int(console_width) - 5)
 
     # === Learners ===
-    learners = DEFAULT_LEARNERS  # TODO: Load learners from user options.
+    learners = DEFAULT_REGRESSORS if is_regression else DEFAULT_CLASSIFIERS  # TODO: Load learners from user options.
     if not learners or len(learners) == 0:
         return  # break?
 
@@ -71,10 +90,13 @@ def run_cmdline(options):
         print("No metrics")
         return  # break?
 
-    parameters = create_default_parameters(learners)
+    #parameters = create_default_parameters(learners)
+    parameter_space = create_parameter_space(learners, settings)
+    import sys
+    # sys.exit(0)
 
-    suggestion_task_manager = SuggestionTaskManager(dataset, learners, parameters, metrics,
-                                                    time=10, report_exit_caller=report_results)
+    suggestion_task_manager = SuggestionTaskManager(dataset, learners, parameter_space, metrics,
+                                                    time=settings['Global'].as_int('timeout'), report_exit_caller=report_results)
     Log.write_color("\n========================= SENDING JOBS =========================", 'OKGREEN')
     suggestion_task_manager.run_tasks()
 
@@ -82,10 +104,11 @@ def run_cmdline(options):
 def report_results(ranking):
     # TODO: TOP should be parameter
     TOP = 5
-    string_template = "\tscore: {score:.8f} learner: [{learner}] with parameters {parameters}"
+    string_template = "    score: {score:.8f} learner: [{learner}({parameters})]"
 
     all_results = sorted(itertools.chain.from_iterable(ranking.values()), reverse=True)
     Log.write_color("\n=========================== RESULTS ===========================", 'OKGREEN')
+    print('')
     print("Global ranking: (top {0})".format(TOP))
     for result in all_results[:TOP]:
         print(string_template.format(score=result.metrics.score,

@@ -2,7 +2,7 @@
 
 from scipy.io.arff.arffread import loadarff, ParseArffError
 from ..utils.debug import Log
-from ..data.base import Dataset
+from ..data import Dataset
 import numpy as np
 from six import b, iteritems
 
@@ -15,6 +15,12 @@ def map_names(target, target_names):
         result[indices] = i
         i += 1
     return result
+
+
+# numpy's shuffle/permutation corrupts structured arrays
+def _shuffle(array_to_shuffle):
+    new_order = np.random.permutation(len(array_to_shuffle))
+    return array_to_shuffle[new_order]
 
 
 class BaseReader(object):
@@ -43,7 +49,7 @@ class ArffReader(BaseReader):
         # TODO: Implement header reading.
         pass
 
-    def read_file(self):
+    def read_file(self, is_regression=False):
         """Read and return all information contained in the file."""
         dataset = None
         try:
@@ -54,20 +60,23 @@ class ArffReader(BaseReader):
             file_metadata_attributes = {key.lower(): value
                                         for key, value in iteritems(file_metadata._attributes)}
             file_metadata._attributes = file_metadata_attributes
-            np.random.shuffle(file_data)  # TODO: Confirm autoshuffle
+            file_data = _shuffle(file_data)
 
             column_names = file_data.dtype.names
             feature_names = [name for name in column_names if name != column_names[-1]]
             feature_data = file_data[feature_names].view((float, len(feature_names)))
             labels = file_data[column_names[-1]]
 
-            dataset = Dataset()
+            dataset = Dataset(is_regression)
             dataset.data = feature_data
             dataset.DESCR = file_metadata.name
             dataset.feature_names = file_metadata.names()[:-1]
             #dataset.target_names = np.unique(labels)
-            dataset.target_names = file_metadata._attributes['class'][1]
-            dataset.target = map_names(labels, dataset.target_names)
+            if dataset.is_regression:
+                dataset.target = labels
+            else:
+                dataset.target_names = file_metadata._attributes['class'][1]
+                dataset.target = map_names(labels, dataset.target_names)
 
             Log.write_end()
         except (ParseArffError, StopIteration) as invalid_file_error:
