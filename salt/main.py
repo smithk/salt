@@ -9,7 +9,7 @@ from .utils.debug import log_step, Log
 from .utils.strings import format_dict
 from .options.readers import StringReader
 from .options import Settings
-from .learn import DEFAULT_CLASSIFIERS, DEFAULT_REGRESSORS
+from .learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS, DEFAULT_REGRESSORS, DEFAULT_CLASSIFIERS
 from .gui.forms import SaltMain
 from .suggest import SuggestionTaskManager
 
@@ -48,8 +48,9 @@ def create_default_parameters(learners):
     return parameter_dict
 
 
-def create_parameter_space(learners, settings):
-    parameter_dict = {learner.__name__: learner.create_parameter_space(settings) for learner in learners}
+def create_parameter_space(learners, settings, optimizer):
+    print([type(learner) for learner in learners])
+    parameter_dict = {learner.__name__: learner.create_parameter_space(settings, optimizer) for learner in learners}
     return parameter_dict
 
 
@@ -80,7 +81,21 @@ def run_cmdline(options):
     np.set_printoptions(linewidth=int(console_width) - 5)
 
     # === Learners ===
-    learners = DEFAULT_REGRESSORS if is_regression else DEFAULT_CLASSIFIERS  # TODO: Load learners from user options.
+    classifier_settings = settings.get('Classifiers')
+    regressor_settings = settings.get('Regressors')
+    default_classifiers = None
+    default_regressors = None
+    if classifier_settings:
+        default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
+                               if classifier_settings[key].get('enabled', False)]
+    if regressor_settings:
+        default_regressors = [AVAILABLE_REGRESSORS[key] for key in regressor_settings
+                              if regressor_settings[key].get('enabled', False)]
+    import sys
+    # sys.exit(0)
+    learners = default_regressors if is_regression else default_classifiers
+    # for testing:
+    learners = DEFAULT_REGRESSORS if dataset.is_regression else DEFAULT_CLASSIFIERS
     if not learners or len(learners) == 0:
         return  # break?
 
@@ -91,14 +106,15 @@ def run_cmdline(options):
         return  # break?
 
     #parameters = create_default_parameters(learners)
-    parameter_space = create_parameter_space(learners, settings)
-    import sys
-    # sys.exit(0)
+    parameter_space = create_parameter_space(learners, settings, optimizer='KDEOptimizer')
 
     suggestion_task_manager = SuggestionTaskManager(dataset, learners, parameter_space, metrics,
                                                     time=settings['Global'].as_int('timeout'), report_exit_caller=report_results)
     Log.write_color("\n========================= SENDING JOBS =========================", 'OKGREEN')
-    suggestion_task_manager.run_tasks()
+    try:
+        suggestion_task_manager.run_tasks()
+    except KeyboardInterrupt:
+        print "Interrupted"
 
 
 def report_results(ranking):

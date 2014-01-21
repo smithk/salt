@@ -11,7 +11,7 @@ from six import PY3
 from ..utils.debug import Log
 from ..utils.strings import format_dict
 from ..IO.readers import ArffReader
-from ..learn import DEFAULT_CLASSIFIERS, DEFAULT_REGRESSORS
+from ..learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS  # , DEFAULT_REGRESSORS, DEFAULT_CLASSIFIERS
 from ..suggest import SuggestionTaskManager
 from ..evaluate import EvaluationResults
 from .controls import ToolTip
@@ -147,9 +147,27 @@ class SaltMain(ttk.Frame):
         self.plot_frame.pack()
         '''
         '''
+        # Settings pane
+        self.settings_frame = ttk.Frame(self)
+        self.settings_scroll_container = ttk.Frame(self.settings_frame, borderwidth=2, relief='ridge')
+        self.settings_scrollbar = ttk.Scrollbar(self.settings_scroll_container)
+        self.settings_container = ttk.Frame(self.settings_scroll_container)
+        self.settings_toolbar = ttk.Frame(self.settings_frame)
+        self.btn_save = ttk.Button(self.settings_toolbar, text='Save settings')
+        self.btn_restore = ttk.Button(self.settings_toolbar, text='Restore to saved settings')
+
+        self.btn_save.pack(side=tk.RIGHT)
+        self.btn_restore.pack(side=tk.RIGHT)
+        self.settings_container.pack(side=tk.LEFT, fill=tk.BOTH, expand=1)
+        self.settings_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.settings_scroll_container.pack(side=tk.TOP, fill=tk.BOTH, expand=1)
+        self.settings_toolbar.pack(side=tk.BOTTOM, fill=tk.X, expand=0)
+        self.settings_frame.pack(fill=tk.BOTH, expand=1)
+
         self.notebook.add(self.ranking_frame, text="Ranking")
         self.notebook.add(self.plot_frame, text="Plot test")
         self.notebook.add(self.console_frame, text="Console")
+        self.notebook.add(self.settings_frame, text="Settings")
         self.notebook.pack(fill=tk.BOTH, expand=1)
 
         ttk.Style().theme_use('clam')
@@ -195,10 +213,9 @@ class SaltMain(ttk.Frame):
                                              learner=learner,
                                              parameters=result.parameters))
 
-    def create_parameter_space(self, learners, settings):
-        parameter_dict = {learner.__name__: learner.create_parameter_space(settings) for learner in learners}
+    def create_parameter_space(self, learners, settings, optimizer):
+        parameter_dict = {learner.__name__: learner.create_parameter_space(settings, optimizer) for learner in learners}
         return parameter_dict
-
 
     def process_file(self):
         self.reset_tree()
@@ -213,7 +230,22 @@ class SaltMain(ttk.Frame):
         settings = self.load_settings(None)
 
         # === Learners ===
-        learners = DEFAULT_REGRESSORS if dataset.is_regression else DEFAULT_CLASSIFIERS  # TODO: Load learners from user options.
+        classifier_settings = settings.get('Classifiers')
+        regressor_settings = settings.get('Regressors')
+        default_classifiers = None
+        default_regressors = None
+        optimizer = 'KDEOptimizer'
+        if classifier_settings:
+            default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
+                                   if classifier_settings[key][optimizer].get('enabled', False)]
+        if regressor_settings:
+            default_regressors = [AVAILABLE_REGRESSORS[key] for key in regressor_settings
+                                  if regressor_settings[key][optimizer].get('enabled', False)]
+        #import sys
+        # sys.exit(0)
+        learners = default_regressors if dataset.is_regression else default_classifiers
+        # for testing:
+        #learners = DEFAULT_REGRESSORS if dataset.is_regression else DEFAULT_CLASSIFIERS
         if not learners or len(learners) == 0:
             return  # break?
 
@@ -224,7 +256,7 @@ class SaltMain(ttk.Frame):
             return  # break?
 
         #parameters = self.create_default_parameters(learners)
-        parameter_space = self.create_parameter_space(learners, settings)
+        parameter_space = self.create_parameter_space(learners, settings, optimizer)
 
         suggestion_task_manager = SuggestionTaskManager(dataset, learners, parameter_space, metrics,
                                                         time=settings['Global'].as_int('timeout'), report_exit_caller=self.report_results, console_queue=self.message_queue)
@@ -261,8 +293,8 @@ class SaltMain(ttk.Frame):
                 #    break
                 break
             i += 1
-        if i<top_n or True:
-            inserted_result = self.tree_rank.insert(learner_node, i, text=eval_result.learner, values=(eval_result.parameters, eval_result.metrics.score))
+        if i < top_n or True:
+           inserted_result = self.tree_rank.insert(learner_node, i, text=eval_result.learner, values=(eval_result.parameters, eval_result.metrics.score))
         global_results = self.tree_rank.get_children(self.tree_global_rank)
         i = 0
         for result in global_results:

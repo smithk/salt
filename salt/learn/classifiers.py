@@ -12,19 +12,16 @@ from sklearn.tree import (DecisionTreeClassifier as SKDecisionTreeClassifier,
                           ExtraTreeClassifier as SKExtraTreeClassifier)
 from sklearn.ensemble import (RandomForestClassifier as SKRandomForestClassifier,
                               ExtraTreesClassifier as SKExtraTreesClassifier,
-                              # AdaBoostClassifier as SKAdaBoostClassifier,
                               GradientBoostingClassifier as SKGradientBoostingClassifier)
 from sklearn.gaussian_process import GaussianProcess
 from sklearn.svm import SVC, LinearSVC, NuSVC
 from sklearn.lda import LDA
 from sklearn.qda import QDA
 import numpy as np
-#from ..utils.debug import log_step  # , Log
 from ..utils.arrays import array_to_proba
 from .base import BaseLearner
-from ..parameters import (ParameterSpace, ChoiceParameter,
-                               BooleanParameter, )
-from ..parameters import Distribution, LogUniformDist, UniformDist, LogNormalDist, Parameter
+from ..parameters import (ParameterSpace, ChoiceParameter, BooleanParameter, )
+from ..parameters import Distribution, Parameter
 from collections import OrderedDict
 
 
@@ -93,7 +90,7 @@ class BaseClassifier(BaseLearner):
         """Convert parameter space into parameters expected by the learner."""
         return (), {}
 
-    def create_parameter_space(self, parameters=None):
+    def create_parameter_space(self, parameters=None, optimizer=None):
         return (), {}  # args, kwargs
 
     @classmethod
@@ -123,55 +120,61 @@ class LogisticRegressionClassifier(BaseClassifier):
         return classifier
 
     @classmethod
-    def get_default_config(self):
-        penalty_options = OrderedDict()
-        penalty_options["distribution"] = "Categorical"
-        penalty_options["categories"] = ['l1', 'l2']
-        penalty_options["probabilities"] = [0.05, 0.95]
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            penalty_options = OrderedDict()
+            penalty_options['distribution'] = 'Categorical'
+            penalty_options['categories'] = ['l1', 'l2']
+            penalty_options['probabilities'] = [0.05, 0.95]
 
-        dual_options = OrderedDict()
-        dual_options["distribution"] = "Categorical"
-        dual_options["categories"] = [True, False]
-        dual_options["probabilities"] = [0.25, 0.75]
+            dual_options = OrderedDict()
+            dual_options['distribution'] = 'Categorical'
+            dual_options['categories'] = [True, False]
+            dual_options['probabilities'] = [0.25, 0.75]
 
-        C_options = OrderedDict()
-        C_options["distribution"] = "LogUniform"
-        C_options["lower"] = 0
-        C_options["upper"] = 2 ** 10
+            C_options = OrderedDict()
+            C_options['distribution'] = 'LogUniform'
+            C_options['lower'] = -10
+            C_options['upper'] = 10
 
-        fit_intercept_options = OrderedDict()
-        fit_intercept_options["distribution"] = "Categorical"
-        fit_intercept_options["categories"] = [True, False]
-        fit_intercept_options["probabilities"] = [0.5, 0.5]
+            fit_intercept_options = OrderedDict()
+            fit_intercept_options['distribution'] = 'Categorical'
+            fit_intercept_options['categories'] = [True, False]
+            fit_intercept_options['probabilities'] = [0.5, 0.5]
 
-        intercept_scaling_options = OrderedDict()
-        intercept_scaling_options["distribution"] = "Uniform"
-        intercept_scaling_options["lower"] = 0.0
-        intercept_scaling_options["upper"] = 5.0
+            intercept_scaling_options = OrderedDict()
+            intercept_scaling_options['distribution'] = 'Uniform'
+            intercept_scaling_options['lower'] = 0.0
+            intercept_scaling_options['upper'] = 5.0
 
-        class_weight_options = OrderedDict()
-        class_weight_options["distribution"] = "Categorical"
-        class_weight_options["categories"] = [None, 'auto']
-        class_weight_options["probabilities"] = [0.5, 0.5]
+            class_weight_options = OrderedDict()
+            class_weight_options['distribution'] = 'Categorical'
+            class_weight_options['categories'] = [None, 'auto']
+            class_weight_options['probabilities'] = [0.5, 0.5]
 
-        tolerance_options = OrderedDict()
-        tolerance_options["distribution"] = "LogNormal"
-        tolerance_options["mean"] = 1e-4
-        tolerance_options["stdev"] = 1.0
+            tolerance_options = OrderedDict()
+            tolerance_options['distribution'] = 'LogNormal'
+            tolerance_options['mean'] = 1e-4
+            tolerance_options['stdev'] = 1.0
 
-        learner_options = {'penalty': penalty_options,
-                           'dual': dual_options,
-                           'C': C_options,
-                           'fit_intercept': fit_intercept_options,
-                           'intercept_scaling': intercept_scaling_options,
-                           'class_weight': class_weight_options,
-                           'tolerance': tolerance_options}
+            learner_options = {'penalty': penalty_options,
+                               'dual': dual_options,
+                               'C': C_options,
+                               'fit_intercept': fit_intercept_options,
+                               'intercept_scaling': intercept_scaling_options,
+                               'class_weight': class_weight_options,
+                               'tolerance': tolerance_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
         return learner_options
 
     @classmethod
-    def create_parameter_space(self, parameters):
+    def create_parameter_space(self, parameters, optimizer):
         # Read learner settings to build priors
-        learner_parameters = parameters['Classifiers']['LogisticRegressionClassifier']  # learner_settings['log_reg_classif']
+        learner_parameters = parameters['Classifiers']['LogisticRegressionClassifier'][optimizer]  # learner_settings['log_reg_classif']
 
         # Build priors
         penalty_prior = Distribution.load(learner_parameters['penalty'])
@@ -222,92 +225,98 @@ class SGDClassifier(BaseClassifier):
         return classifier
 
     @classmethod
-    def get_default_config(self):
-        loss_options = OrderedDict()
-        loss_options['distribution'] = 'Categorical'
-        loss_options['categories'] = ['hinge', 'log', 'modified_huber', 'squared_hinge', 'perceptron', 'squared_loss',
-                                      'huber', 'epsilon_insensitive', 'squared_epsilon_insensitive']
-        # loss_options['categories'] = ['log', 'modified_huber']  # Only these loss functions implement predict_proba
-        # probabilities assumed uniform if omitited
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            loss_options = OrderedDict()
+            loss_options['distribution'] = 'Categorical'
+            loss_options['categories'] = ['hinge', 'log', 'modified_huber', 'squared_hinge', 'perceptron', 'squared_loss',
+                                          'huber', 'epsilon_insensitive', 'squared_epsilon_insensitive']
+            # loss_options['categories'] = ['log', 'modified_huber']  # Only these loss functions implement predict_proba
+            # probabilities assumed uniform if omitited
 
-        penalty_options = OrderedDict()
-        penalty_options['distribution'] = 'Categorical'
-        penalty_options['categories'] = ['l1', 'l2', 'elasticnet']
-        # penalty_options['probabilities'] = [0.05, 0.85, 0.1]  # ?
+            penalty_options = OrderedDict()
+            penalty_options['distribution'] = 'Categorical'
+            penalty_options['categories'] = ['l1', 'l2', 'elasticnet']
+            # penalty_options['probabilities'] = [0.05, 0.85, 0.1]  # ?
 
-        alpha_options = OrderedDict()
-        alpha_options['distribution'] = 'Uniform'
-        alpha_options['lower'] = 5e-5
-        alpha_options['upper'] = 5e-4
+            alpha_options = OrderedDict()
+            alpha_options['distribution'] = 'Uniform'
+            alpha_options['lower'] = 5e-5
+            alpha_options['upper'] = 5e-4
 
-        l1_ratio_options = OrderedDict()
-        l1_ratio_options['distribution'] = 'Uniform'
-        l1_ratio_options['lower'] = 0
-        l1_ratio_options['upper'] = 1
+            l1_ratio_options = OrderedDict()
+            l1_ratio_options['distribution'] = 'Uniform'
+            l1_ratio_options['lower'] = 0
+            l1_ratio_options['upper'] = 1
 
-        fit_intercept_options = OrderedDict()
-        fit_intercept_options['distribution'] = 'Categorical'
-        fit_intercept_options['categories'] = [True, False]
-        fit_intercept_options['probabilities'] = [0.5, 0.5]
+            fit_intercept_options = OrderedDict()
+            fit_intercept_options['distribution'] = 'Categorical'
+            fit_intercept_options['categories'] = [True, False]
+            fit_intercept_options['probabilities'] = [0.5, 0.5]
 
-        n_iter_options = OrderedDict()
-        n_iter_options['distribution'] = 'LogNormal'
-        n_iter_options['mean'] = 2.0
-        n_iter_options['stdev'] = 1.0
-        n_iter_options['categories'] = range(1, 10)
+            n_iter_options = OrderedDict()
+            n_iter_options['distribution'] = 'LogNormal'
+            n_iter_options['mean'] = 2.0
+            n_iter_options['stdev'] = 1.0
+            n_iter_options['categories'] = range(1, 10)
 
-        shuffle_options = OrderedDict()
-        shuffle_options['distribution'] = 'Categorical'
-        shuffle_options['categories'] = [True, False]
+            shuffle_options = OrderedDict()
+            shuffle_options['distribution'] = 'Categorical'
+            shuffle_options['categories'] = [True, False]
 
-        epsilon_options = OrderedDict()
-        epsilon_options['distribution'] = 'LogNormal'
-        epsilon_options['mean'] = 5.0
-        epsilon_options['stdev'] = 1.0
+            epsilon_options = OrderedDict()
+            epsilon_options['distribution'] = 'LogNormal'
+            epsilon_options['mean'] = 5.0
+            epsilon_options['stdev'] = 1.0
 
-        learning_rate_options = OrderedDict()
-        learning_rate_options['distribution'] = 'Categorical'
-        learning_rate_options['categories'] = ['constant', 'optimal', 'invscaling']
-        learning_rate_options['probabilities'] = [0.2, 0.3, 0.5]
+            learning_rate_options = OrderedDict()
+            learning_rate_options['distribution'] = 'Categorical'
+            learning_rate_options['categories'] = ['constant', 'optimal', 'invscaling']
+            learning_rate_options['probabilities'] = [0.2, 0.3, 0.5]
 
-        eta0_options = OrderedDict()
-        eta0_options['distribution'] = 'Uniform'
-        eta0_options['lower'] = 0.0
-        eta0_options['upper'] = 1.0
+            eta0_options = OrderedDict()
+            eta0_options['distribution'] = 'Uniform'
+            eta0_options['lower'] = 0.0
+            eta0_options['upper'] = 1.0
 
-        power_t_options = OrderedDict()
-        power_t_options['distribution'] = 'Uniform'
-        power_t_options['lower'] = 0.0
-        power_t_options['upper'] = 1.0
+            power_t_options = OrderedDict()
+            power_t_options['distribution'] = 'Uniform'
+            power_t_options['lower'] = 0.0
+            power_t_options['upper'] = 1.0
 
-        class_weight_options = OrderedDict()
-        class_weight_options['distribution'] = 'Categorical'
-        class_weight_options['categories'] = [None, 'auto']
-        class_weight_options['probabilities'] = [0.5, 0.5]
+            class_weight_options = OrderedDict()
+            class_weight_options['distribution'] = 'Categorical'
+            class_weight_options['categories'] = [None, 'auto']
+            class_weight_options['probabilities'] = [0.5, 0.5]
 
-        warm_start_options = OrderedDict()
-        warm_start_options['distribution'] = 'Categorical'
-        warm_start_options['categories'] = [True, False]
+            warm_start_options = OrderedDict()
+            warm_start_options['distribution'] = 'Categorical'
+            warm_start_options['categories'] = [True, False]
 
-        learner_options = {'loss': loss_options,
-                           'penalty': penalty_options,
-                           'alpha': alpha_options,
-                           'l1_ratio': l1_ratio_options,
-                           'fit_intercept': fit_intercept_options,
-                           'n_iter': n_iter_options,
-                           'shuffle': shuffle_options,
-                           'epsilon': epsilon_options,
-                           'learning_rate': learning_rate_options,
-                           'eta0': eta0_options,
-                           'power_t': power_t_options,
-                           'class_weight': class_weight_options,
-                           'warm_start': warm_start_options}
+            learner_options = {'loss': loss_options,
+                               'penalty': penalty_options,
+                               'alpha': alpha_options,
+                               'l1_ratio': l1_ratio_options,
+                               'fit_intercept': fit_intercept_options,
+                               'n_iter': n_iter_options,
+                               'shuffle': shuffle_options,
+                               'epsilon': epsilon_options,
+                               'learning_rate': learning_rate_options,
+                               'eta0': eta0_options,
+                               'power_t': power_t_options,
+                               'class_weight': class_weight_options,
+                               'warm_start': warm_start_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
         return learner_options
 
     @classmethod
-    def create_parameter_space(self, parameters):
+    def create_parameter_space(self, parameters, optimizer):
         # Read learner settings to build priors
-        learner_parameters = parameters['Classifiers']['SGDClassifier']
+        learner_parameters = parameters['Classifiers']['SGDClassifier'][optimizer]
 
         # Build priors
         loss_prior = Distribution.load(learner_parameters['loss'])
@@ -389,6 +398,87 @@ class PassiveAggressiveClassifier(BaseClassifier):
         classifier = SKPassiveAggressiveClassifier(**parameters)
         return classifier
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            C_options = OrderedDict()
+            C_options['distribution'] = 'Uniform'
+            C_options['lower'] = 0.0
+            C_options['upper'] = 5.0
+
+            fit_intercept_options = OrderedDict()
+            fit_intercept_options['distribution'] = 'Categorical'
+            fit_intercept_options['categories'] = [True, False]
+            fit_intercept_options['probabilities'] = [0.5, 0.5]
+
+            n_iter_options = OrderedDict()
+            n_iter_options['distribution'] = 'LogNormal'
+            n_iter_options['mean'] = 2.0
+            n_iter_options['stdev'] = 1.0
+            n_iter_options['categories'] = range(1, 10)
+
+            shuffle_options = OrderedDict()
+            shuffle_options['distribution'] = 'Categorical'
+            shuffle_options['categories'] = [True, False]
+            shuffle_options['probabilities'] = [0.5, 0.5]
+
+            loss_options = OrderedDict()
+            loss_options['distribution'] = 'Categorical'
+            loss_options['categories'] = ['hinge', 'squared_hinge']
+            loss_options['probabilities'] = [0.5, 0.5]
+
+            warm_start_options = OrderedDict()
+            warm_start_options['distribution'] = 'Categorical'
+            warm_start_options['categories'] = [True, False]
+            warm_start_options['probabilities'] = [0.5, 0.5]
+
+            learner_options = {'C': C_options,
+                               'fit_intercept': fit_intercept_options,
+                               'n_iter': n_iter_options,
+                               'shuffle': shuffle_options,
+                               'loss': loss_options,
+                               'warm_start': warm_start_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['PassiveAggressiveClassifier'][optimizer]
+
+        # Build priors
+        C_prior = Distribution.load(learner_parameters['C'])
+        fit_intercept_prior = Distribution.load(learner_parameters['fit_intercept'], category_type='bool')
+        n_iter_prior = Distribution.load(learner_parameters['n_iter'], category_type='int')
+        shuffle_prior = Distribution.load(learner_parameters['shuffle'], category_type='bool')
+        loss_prior = Distribution.load(learner_parameters['loss'])
+        warm_start_prior = Distribution.load(learner_parameters['warm_start'], category_type='bool')
+
+        # Build parameters
+        C_param = Parameter('C', prior=C_prior, default=1.0)
+        fit_intercept_param = Parameter('fit_intercept', prior=fit_intercept_prior, default=True)
+        n_iter_param = Parameter('n_iter', prior=n_iter_prior, default=5)
+        shuffle_param = Parameter('shuffle', prior=shuffle_prior, default=False)
+        loss_param = Parameter('loss', prior=loss_prior, default='hinge')
+        warm_start_param = Parameter('warm_start', prior=warm_start_prior, default=False)
+
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['C'] = C_param
+        param_space['fit_intercept'] = fit_intercept_param
+        param_space['n_iter'] = n_iter_param
+        param_space['shuffle'] = shuffle_param
+        param_space['loss'] = loss_param
+        param_space['warm_start'] = warm_start_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
     #@log_step("Predicting with Passive-aggressive classifier")
     def predict(self, dataset):
         """Perform the prediction step on the given dataset.
@@ -400,31 +490,6 @@ class PassiveAggressiveClassifier(BaseClassifier):
         prediction = pac.predict(dataset.data)
         prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
         return prediction
-
-    @classmethod
-    def create_default_params(self):
-        param_space = ParameterSpace()
-
-        param_space['C'] = ChoiceParameter([1.0])
-        param_space['fit_intercept'] = BooleanParameter()
-        param_space['n_iter'] = ChoiceParameter([5])
-        param_space['shuffle'] = BooleanParameter()
-        # param_space['random_state'] = ?
-        param_space['loss'] = ChoiceParameter(['hinge', 'squared_hinge'])
-
-        return param_space
-
-    def create_parameter_space(self, parameters):
-        # Read learner parameters to build priors
-        learner_parameters = parameters.learner_settings['sgd_classif']
-
-        # Build priors
-
-        # Build parameters
-
-        # Create parameter space
-        param_space = ParameterSpace()
-        return param_space
 
 
 class RidgeClassifier(BaseClassifier):
@@ -450,6 +515,90 @@ class RidgeClassifier(BaseClassifier):
         prediction = ridge.predict(dataset.data)
         prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
         return prediction
+
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            alpha_options = OrderedDict()
+            alpha_options['distribution'] = 'LogNormal'
+            alpha_options['mean'] = 1.0
+            alpha_options['stdev'] = 0.5
+
+            # class_weight_options = OrderedDict()
+            # class_weight_options['distribution'] = 'Categorical'
+            # class_weight_options['categories'] = [None]  # TODO Provide interface to assign weights
+            # class_weight_options['probabilities'] = [1]
+
+            fit_intercept_options = OrderedDict()
+            fit_intercept_options['distribution'] = 'Categorical'
+            fit_intercept_options['categories'] = [True, False]
+            fit_intercept_options['probabilities'] = [0.5, 0.5]
+
+            max_iter_options = OrderedDict()
+            max_iter_options['distribution'] = 'Categorical'
+            max_iter_options['categories'] = range(1, 10)
+
+            normalize_options = OrderedDict()
+            normalize_options['distribution'] = 'Categorical'
+            normalize_options['categories'] = [True, False]
+            normalize_options['probabilities'] = [0.5, 0.5]
+
+            solver_options = OrderedDict()
+            solver_options['distribution'] = 'Categorical'
+            solver_options['categories'] = ['svd', 'dense_cholesky', 'lsqr', 'sparse_cg']
+
+            tol_options = OrderedDict()
+            tol_options['distribution'] = 'LogNormal'
+            tol_options['mean'] = 0.001
+            tol_options['stdev'] = 0.5
+
+            learner_options = {'alpha': alpha_options,
+                               # 'class_weight': class_weight_options,
+                               'fit_intercept': fit_intercept_options,
+                               'max_iter': max_iter_options,
+                               'normalize': normalize_options,
+                               'solver': solver_options,
+                               'tolerance': tol_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['RidgeClassifier'][optimizer]
+
+        # Build priors
+        alpha_prior = Distribution.load(learner_parameters['alpha'])
+        # class_weight_prior = Distribution.load(learner_parameters['class_weight'], parse_none=True)
+        fit_intercept_prior = Distribution.load(learner_parameters['fit_intercept'], category_type='bool')
+        max_iter_prior = Distribution.load(learner_parameters['max_iter'], category_type='int')
+        normalize_prior = Distribution.load(learner_parameters['normalize'], category_type='bool')
+        solver_prior = Distribution.load(learner_parameters['solver'])
+        tol_prior = Distribution.load(learner_parameters['tolerance'])
+
+        # Build parameters
+        alpha_param = Parameter('alpha', prior=alpha_prior, default=1.0)
+        # class_weight_param = Parameter('class_weight', prior=class_weight_prior, default=None)
+        fit_intercept_param = Parameter('fit_intercept', prior=fit_intercept_prior, default=True)
+        max_iter_param = Parameter('max_iter', prior=max_iter_prior, default=None)
+        normalize_param = Parameter('normalize', prior=normalize_prior, default=False)
+        solver_param = Parameter('solver', prior=solver_prior, default='auto')
+        tol_param = Parameter('tol', prior=tol_prior, default=0.001)
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['alpha'] = alpha_param
+        # param_space['class_weight'] = class_weight_param
+        param_space['fit_intercept'] = fit_intercept_param
+        param_space['max_iter'] = max_iter_param
+        param_space['normalize'] = normalize_param
+        param_space['solver'] = solver_param
+        param_space['tol'] = tol_param
+        return param_space
 
     @classmethod
     def create_default_params(self):
@@ -529,6 +678,21 @@ class GaussianNBClassifier(BaseClassifier):
     @classmethod
     def create_default_params(self):
         return ParameterSpace()
+
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            learner_options = {'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        param_space = ParameterSpace()
+        return param_space
 
 
 class MultinomialNBClassifier(BaseClassifier):
@@ -623,6 +787,94 @@ class KNNClassifier(BaseClassifier):
         """
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            n_neighbors_options = OrderedDict()
+            n_neighbors_options['distribution'] = 'LogNormal'
+            n_neighbors_options['mean'] = 1.0
+            n_neighbors_options['stdev'] = 0.5
+            n_neighbors_options['categories'] = range(2, 20)
+
+            weights_options = OrderedDict()
+            weights_options['distribution'] = 'Categorical'
+            weights_options['categories'] = ['uniform', 'distance']
+            weights_options['probabilities'] = [0.5, 0.5]
+
+            algorithm_options = OrderedDict()
+            algorithm_options['distribution'] = 'Categorical'
+            algorithm_options['categories'] = ['ball_tree', 'kd_tree', 'brute']
+
+            leaf_size_options = OrderedDict()
+            leaf_size_options['distribution'] = 'Categorical'  # ?
+            leaf_size_options['categories'] = range(15, 45)
+
+            metric_options = OrderedDict()
+            metric_options['distribution'] = 'Categorical'
+            metric_options['categories'] = ['euclidean', 'manhattan', 'chebyshev', 'minkowski', 'wminkowski', 'seuclidean']  # 'mahalanobis'?
+
+            p_options = OrderedDict()
+            p_options['distribution'] = 'Categorical'
+            p_options['categories'] = range(1, 20)
+
+            w_options = OrderedDict()
+            w_options['distribution'] = 'Uniform'
+            w_options['lower'] = 0.0
+            w_options['upper'] = 1.0
+
+            learner_options = {'n_neighbors': n_neighbors_options,
+                               'weights': weights_options,
+                               'algorithm': algorithm_options,
+                               'leaf_size': leaf_size_options,
+                               'p': p_options,
+                               'w': w_options,
+                               'metric': metric_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['KNNClassifier'][optimizer]
+
+        # Build priors
+        n_neighbors_prior = Distribution.load(learner_parameters['n_neighbors'], category_type='int')
+        weights_prior = Distribution.load(learner_parameters['weights'])
+        algorithm_prior = Distribution.load(learner_parameters['algorithm'])
+        leaf_size_prior = Distribution.load(learner_parameters['leaf_size'], category_type='int')
+        metric_prior = Distribution.load(learner_parameters['metric'])
+        p_prior = Distribution.load(learner_parameters['p'], category_type='int')
+        w_prior = Distribution.load(learner_parameters['w'])
+
+        # Build parameters
+        n_neighbors_param = Parameter('n_neighbors', prior=n_neighbors_prior, default=5)
+        weights_param = Parameter('weights', prior=weights_prior, default='uniform')
+        algorithm_param = Parameter('algorithm', prior=algorithm_prior, default='auto')
+        leaf_size_param = Parameter('leaf_size', prior=leaf_size_prior, default=30,
+                                    sample_if=lambda params: params['algorithm'] in ('ball_tree', 'kd_tree'))
+        metric_param = Parameter('metric', prior=metric_prior, default='minkowski',
+                                 valid_if=lambda value, params: (params['algorithm'] != 'kd_tree') or (value not in ('seuclidean', 'wminkowski')),
+                                 action_if_invalid='resample')
+        p_param = Parameter('p', prior=p_prior, default=2,
+                            sample_if=lambda params: params['metric'] in ('minkowski', 'wminkowski'))
+        w_param = Parameter('w', prior=w_prior, default=1,
+                            sample_if=lambda params: params['metric'] == 'wminkowski')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['n_neighbors'] = n_neighbors_param
+        param_space['weights'] = weights_param
+        param_space['algorithm'] = algorithm_param
+        param_space['leaf_size'] = leaf_size_param
+        param_space['metric'] = metric_param
+        param_space['p'] = p_param
+        param_space['w'] = w_param
+        return param_space
+
 
 class RadiusNeighborsClassifier(BaseClassifier):
     """Classifier based on neighbors voting within a given radius."""
@@ -662,6 +914,93 @@ class RadiusNeighborsClassifier(BaseClassifier):
         #param_space['outlier_label'] = ?
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            radius_options = OrderedDict()
+            radius_options['distribution'] = 'LogUniform'
+            radius_options['lower'] = -5.0
+            radius_options['upper'] = 5.0
+
+            weights_options = OrderedDict()
+            weights_options['distribution'] = 'Categorical'
+            weights_options['categories'] = ['uniform', 'distance']
+            weights_options['probabilities'] = [0.5, 0.5]
+
+            algorithm_options = OrderedDict()
+            algorithm_options['distribution'] = 'Categorical'
+            algorithm_options['categories'] = ['ball_tree', 'kd_tree', 'brute']
+
+            leaf_size_options = OrderedDict()
+            leaf_size_options['distribution'] = 'Categorical'  # ?
+            leaf_size_options['categories'] = range(15, 45)
+
+            metric_options = OrderedDict()
+            metric_options['distribution'] = 'Categorical'
+            metric_options['categories'] = ['euclidean', 'manhattan', 'chebyshev', 'minkowski', 'wminkowski', 'seuclidean']  # 'mahalanobis'?
+
+            p_options = OrderedDict()
+            p_options['distribution'] = 'Categorical'
+            p_options['categories'] = range(1, 20)
+
+            w_options = OrderedDict()
+            w_options['distribution'] = 'Uniform'
+            w_options['lower'] = 0.0
+            w_options['upper'] = 1.0
+
+            learner_options = {'radius': radius_options,
+                               'weights': weights_options,
+                               'algorithm': algorithm_options,
+                               'leaf_size': leaf_size_options,
+                               'p': p_options,
+                               'w': w_options,
+                               'metric': metric_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['RadiusNeighborsClassifier'][optimizer]
+
+        # Build priors
+        radius_prior = Distribution.load(learner_parameters['radius'])
+        weights_prior = Distribution.load(learner_parameters['weights'])
+        algorithm_prior = Distribution.load(learner_parameters['algorithm'])
+        leaf_size_prior = Distribution.load(learner_parameters['leaf_size'], category_type='int')
+        metric_prior = Distribution.load(learner_parameters['metric'])
+        p_prior = Distribution.load(learner_parameters['p'], category_type='int')
+        w_prior = Distribution.load(learner_parameters['w'])
+
+        # Build parameters
+        radius_param = Parameter('n_neighbors', prior=radius_prior, default=1.0)
+        weights_param = Parameter('weights', prior=weights_prior, default='uniform')
+        algorithm_param = Parameter('algorithm', prior=algorithm_prior, default='auto')
+        leaf_size_param = Parameter('leaf_size', prior=leaf_size_prior, default=30,
+                                    sample_if=lambda params: params['algorithm'] in ('ball_tree', 'kd_tree'))
+        metric_param = Parameter('metric', prior=metric_prior, default='minkowski',
+                                 valid_if=lambda value, params: (params['algorithm'] != 'kd_tree') or (value not in ('seuclidean', 'wminkowski')),
+                                 action_if_invalid='resample')
+        p_param = Parameter('p', prior=p_prior, default=2,
+                            sample_if=lambda params: params['metric'] in ('minkowski', 'wminkowski'))
+        w_param = Parameter('w', prior=w_prior, default=1,
+                            sample_if=lambda params: params['metric'] == 'wminkowski')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['radius'] = radius_param
+        param_space['weights'] = weights_param
+        param_space['algorithm'] = algorithm_param
+        param_space['leaf_size'] = leaf_size_param
+        param_space['metric'] = metric_param
+        param_space['p'] = p_param
+        param_space['w'] = w_param
+        return param_space
+
 
 class NearestCentroidClassifier(BaseClassifier):
     """Nearest centroid classifier."""
@@ -688,6 +1027,34 @@ class NearestCentroidClassifier(BaseClassifier):
         return prediction
 
     @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            metric_options = OrderedDict()
+            metric_options['distribution'] = 'Categorical'
+            metric_options['categories'] = ['euclidean', 'l2', 'l1', 'manhattan',
+                                            'cityblock',  # not same as manhattan???
+                                            'braycurtis', 'canberra', 'chebyshev',
+                                            'correlation', 'cosine', 'dice', 'hamming',
+                                            'jaccard', 'kulsinski', 'mahalanobis',
+                                            'matching', 'minkowski', 'rogerstanimoto',
+                                            'russellrao', 'seuclidean', 'sokalmichener',
+                                            'sokalsneath', 'sqeuclidean', 'yule']
+
+            shrink_threshold_options = OrderedDict()
+            shrink_threshold_options['distribution'] = 'LogUniform'
+            shrink_threshold_options['lower'] = -10.0
+            shrink_threshold_options['upper'] = 10.0
+
+            learner_options = {'metric': metric_options,
+                               'shrink_threshold': shrink_threshold_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
     def create_default_params(self):
         param_space = ParameterSpace()
 
@@ -703,6 +1070,24 @@ class NearestCentroidClassifier(BaseClassifier):
 
         return param_space
 
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['NearestCentroidClassifier'][optimizer]
+
+        # Build priors
+        metric_prior = Distribution.load(learner_parameters['metric'])
+        shrink_threshold_prior = Distribution.load(learner_parameters['shrink_threshold'])
+
+        # Build parameters
+        metric_param = Parameter('metric', prior=metric_prior, default='euclidean')
+        shrink_threshold_param = Parameter('shrink_threshold', prior=shrink_threshold_prior, default=None)
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['metric'] = metric_param
+        param_space['shrink_threshold'] = shrink_threshold_param
+        return param_space
+
 
 class DecisionTreeClassifier(BaseClassifier):
     """Decision tree classifier."""
@@ -713,6 +1098,14 @@ class DecisionTreeClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Decision tree classifier.
         """
+        del parameters['max_features_use_preset']
+        if 'max_features_preset' in parameters:
+            parameters['max_features'] = parameters['max_features_preset']
+            del parameters['max_features_preset']
+        else:
+            parameters['max_features'] = parameters['max_features_sample']
+            del parameters['max_features_sample']
+
         classifier = SKDecisionTreeClassifier(**parameters)
         return classifier
 
@@ -729,9 +1122,111 @@ class DecisionTreeClassifier(BaseClassifier):
 
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            criterion_options = OrderedDict()
+            criterion_options['distribution'] = 'Categorical'
+            criterion_options['categories'] = ['gini', 'entropy']
+            criterion_options['probabilities'] = [0.5, 0.5]
+
+            max_features_use_preset_options = OrderedDict()
+            max_features_use_preset_options['distribution'] = 'Categorical'
+            max_features_use_preset_options['categories'] = [True, False]
+            max_features_use_preset_options['probabilities'] = [0.75, 0.25]
+
+            max_features_preset_options = OrderedDict()
+            max_features_preset_options['distribution'] = 'Categorical'
+            max_features_preset_options['categories'] = ['sqrt', 'log2', None]
+
+            max_features_sample_options = OrderedDict()
+            max_features_sample_options['distribution'] = 'Uniform'
+            max_features_sample_options['lower'] = 0.0
+            max_features_sample_options['upper'] = 1.0
+
+            max_depth_options = OrderedDict()
+            max_depth_options['distribution'] = 'LogUniform'
+            max_depth_options['lower'] = 0.0
+            max_depth_options['upper'] = 5.0
+            # TODO add discretization functionality?
+            max_depth_options['categories'] = range(int(np.rint(np.exp(0))), int(np.rint(np.exp(5.0))))
+
+            min_samples_split_options = OrderedDict()
+            min_samples_split_options['distribution'] = 'Uniform'
+            min_samples_split_options['lower'] = 2
+            min_samples_split_options['upper'] = 20
+            min_samples_split_options['categories'] = range(2, 20)
+
+            min_samples_leaf_options = OrderedDict()
+            min_samples_leaf_options['distribution'] = 'Uniform'
+            min_samples_leaf_options['lower'] = 1
+            min_samples_leaf_options['upper'] = 20
+            min_samples_leaf_options['categories'] = range(1, 20)
+
+            learner_options = {'criterion': criterion_options,
+                               'max_features_use_preset': max_features_use_preset_options,
+                               'max_features_preset': max_features_preset_options,
+                               'max_features_sample': max_features_sample_options,
+                               'max_depth': max_depth_options,
+                               'min_samples_split': min_samples_split_options,
+                               'min_samples_leaf': min_samples_leaf_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['DecisionTreeClassifier'][optimizer]
+
+        # Build priors
+        criterion_prior = Distribution.load(learner_parameters['criterion'])
+        max_features_use_preset_prior = Distribution.load(learner_parameters['max_features_use_preset'], category_type='bool')
+        max_features_preset_prior = Distribution.load(learner_parameters['max_features_preset'], parse_none=True)
+        max_features_sample_prior = Distribution.load(learner_parameters['max_features_sample'])
+        max_depth_prior = Distribution.load(learner_parameters['max_depth'], category_type='int')
+        min_samples_split_prior = Distribution.load(learner_parameters['min_samples_split'], category_type='int')
+        min_samples_leaf_prior = Distribution.load(learner_parameters['min_samples_leaf'], category_type='int')
+
+        # Build parameters
+        criterion_param = Parameter('criterion', prior=criterion_prior, default='gini')
+        max_features_use_preset_param = Parameter('max_features_use_preset',
+                                                  prior=max_features_use_preset_prior,
+                                                  default=True)
+        max_features_preset_param = Parameter('max_features_preset',
+                                              prior=max_features_preset_prior,
+                                              default=None,
+                                              sample_if=lambda params: params['max_features_use_preset'])
+        max_features_sample_param = Parameter('max_features_sample',
+                                              prior=max_features_sample_prior,
+                                              default=1.0,
+                                              sample_if=lambda params: not params['max_features_use_preset'])
+        max_depth_param = Parameter('max_depth', prior=max_depth_prior, default=None)
+        min_samples_split_param = Parameter('min_samples_split', prior=min_samples_split_prior, default=2)
+        min_samples_leaf_param = Parameter('min_samples_leaf', prior=min_samples_leaf_prior, default=1)
+
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['criterion'] = criterion_param
+        param_space['max_features_use_preset'] = max_features_use_preset_param
+        param_space['max_features_preset'] = max_features_preset_param
+        param_space['max_features_sample'] = max_features_sample_param
+        param_space['max_depth'] = max_depth_param
+        param_space['min_samples_split'] = min_samples_split_param
+        param_space['min_samples_leaf'] = min_samples_leaf_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
 
 class ExtraTreeClassifier(BaseClassifier):
     """Extremely randomized tree classifier."""
+
+    # Removed; see http://stackoverflow.com/questions/20177970/decisiontreeclassifier-vs-extratreeclassifier
 
     def create_classifier(self, **parameters):
         """Creates the extremely randomized tree classifier class, with the parameters given.
@@ -739,6 +1234,13 @@ class ExtraTreeClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Extremely randomized decision tree classifier.
         """
+        del parameters['max_features_use_preset']
+        if 'max_features_preset' in parameters:
+            parameters['max_features'] = parameters['max_features_preset']
+            del parameters['max_features_preset']
+        else:
+            parameters['max_features'] = parameters['max_features_sample']
+            del parameters['max_features_sample']
         classifier = SKExtraTreeClassifier(**parameters)
         return classifier
 
@@ -766,6 +1268,13 @@ class RandomForestClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Random forest classifier.
         """
+        del parameters['max_features_use_preset']
+        if 'max_features_preset' in parameters:
+            parameters['max_features'] = parameters['max_features_preset']
+            del parameters['max_features_preset']
+        else:
+            parameters['max_features'] = parameters['max_features_sample']
+            del parameters['max_features_sample']
         classifier = SKRandomForestClassifier(**parameters)
         return classifier
 
@@ -785,6 +1294,131 @@ class RandomForestClassifier(BaseClassifier):
 
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            n_estimators_options = OrderedDict()
+            n_estimators_options['distribution'] = 'Categorical'
+            n_estimators_options['categories'] = range(2, 20)
+
+            criterion_options = OrderedDict()
+            criterion_options['distribution'] = 'Categorical'
+            criterion_options['categories'] = ['gini', 'entropy']
+            criterion_options['probabilities'] = [0.5, 0.5]
+
+            max_features_use_preset_options = OrderedDict()
+            max_features_use_preset_options['distribution'] = 'Categorical'
+            max_features_use_preset_options['categories'] = [True, False]
+            max_features_use_preset_options['probabilities'] = [0.75, 0.25]
+
+            max_features_preset_options = OrderedDict()
+            max_features_preset_options['distribution'] = 'Categorical'
+            max_features_preset_options['categories'] = ['sqrt', 'log2', None]
+
+            max_features_sample_options = OrderedDict()
+            max_features_sample_options['distribution'] = 'Uniform'
+            max_features_sample_options['lower'] = 0.0
+            max_features_sample_options['upper'] = 1.0
+
+            max_depth_options = OrderedDict()
+            max_depth_options['distribution'] = 'LogUniform'
+            max_depth_options['lower'] = 0.0
+            max_depth_options['upper'] = 5.0
+            # TODO add discretization functionality?
+            max_depth_options['categories'] = range(int(np.rint(np.exp(0))), int(np.rint(np.exp(5.0))))
+
+            min_samples_split_options = OrderedDict()
+            min_samples_split_options['distribution'] = 'Uniform'
+            min_samples_split_options['lower'] = 2
+            min_samples_split_options['upper'] = 20
+            min_samples_split_options['categories'] = range(2, 20)
+
+            min_samples_leaf_options = OrderedDict()
+            min_samples_leaf_options['distribution'] = 'Uniform'
+            min_samples_leaf_options['lower'] = 1
+            min_samples_leaf_options['upper'] = 20
+            min_samples_leaf_options['categories'] = range(1, 20)
+
+            bootstrap_options = OrderedDict()
+            bootstrap_options['distribution'] = 'Categorical'
+            bootstrap_options['categories'] = [True, False]
+
+            oob_options = OrderedDict()
+            oob_options['distribution'] = 'Categorical'
+            oob_options['categories'] = [True, False]
+
+            learner_options = {'n_estimators': n_estimators_options,
+                               'criterion': criterion_options,
+                               'max_features_use_preset': max_features_use_preset_options,
+                               'max_features_preset': max_features_preset_options,
+                               'max_features_sample': max_features_sample_options,
+                               'max_depth': max_depth_options,
+                               'min_samples_split': min_samples_split_options,
+                               'min_samples_leaf': min_samples_leaf_options,
+                               'bootstrap': bootstrap_options,
+                               'oob_score': oob_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['RandomForestClassifier'][optimizer]
+
+        # Build priors
+        n_estimators_prior = Distribution.load(learner_parameters['n_estimators'], category_type='int')
+        criterion_prior = Distribution.load(learner_parameters['criterion'])
+        max_features_use_preset_prior = Distribution.load(learner_parameters['max_features_use_preset'], category_type='bool')
+        max_features_preset_prior = Distribution.load(learner_parameters['max_features_preset'], parse_none=True)
+        max_features_sample_prior = Distribution.load(learner_parameters['max_features_sample'])
+        max_depth_prior = Distribution.load(learner_parameters['max_depth'], category_type='int')
+        min_samples_split_prior = Distribution.load(learner_parameters['min_samples_split'], category_type='int')
+        min_samples_leaf_prior = Distribution.load(learner_parameters['min_samples_leaf'], category_type='int')
+        bootstrap_prior = Distribution.load(learner_parameters['bootstrap'], category_type='bool')
+        oob_score_prior = Distribution.load(learner_parameters['oob_score'], category_type='bool')
+
+        # Build parameters
+        n_estimators_param = Parameter('n_estimators', prior=n_estimators_prior, default=10)
+        criterion_param = Parameter('criterion', prior=criterion_prior, default='gini')
+        max_features_use_preset_param = Parameter('max_features_use_preset',
+                                                  prior=max_features_use_preset_prior,
+                                                  default=True)
+        max_features_preset_param = Parameter('max_features_preset',
+                                              prior=max_features_preset_prior,
+                                              default=None,
+                                              sample_if=lambda params: params['max_features_use_preset'])
+        max_features_sample_param = Parameter('max_features_sample',  # Just let it break when feature percentage rounds down to zero?
+                                              prior=max_features_sample_prior,
+                                              default=1.0,
+                                              sample_if=lambda params: not params['max_features_use_preset'])
+        max_depth_param = Parameter('max_depth', prior=max_depth_prior, default=None)
+        min_samples_split_param = Parameter('min_samples_split', prior=min_samples_split_prior, default=2)
+        min_samples_leaf_param = Parameter('min_samples_leaf', prior=min_samples_leaf_prior, default=1)
+        bootstrap_param = Parameter('bootstrap', prior=bootstrap_prior, default=False)
+        oob_score_param = Parameter('oob_score', prior=oob_score_prior, default=False,
+                                    sample_if=lambda params: params['bootstrap'])
+
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['n_estimators'] = n_estimators_param
+        param_space['criterion'] = criterion_param
+        param_space['max_features_use_preset'] = max_features_use_preset_param
+        param_space['max_features_preset'] = max_features_preset_param
+        param_space['max_features_sample'] = max_features_sample_param
+        param_space['max_depth'] = max_depth_param
+        param_space['min_samples_split'] = min_samples_split_param
+        param_space['min_samples_leaf'] = min_samples_leaf_param
+        param_space['bootstrap'] = bootstrap_param
+        param_space['oob_score'] = oob_score_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
 
 class ExtraTreeEnsembleClassifier(BaseClassifier):
     """Classifier based on a number of randomized decision trees."""
@@ -795,6 +1429,13 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Extra trees classifier.
         """
+        del parameters['max_features_use_preset']
+        if 'max_features_preset' in parameters:
+            parameters['max_features'] = parameters['max_features_preset']
+            del parameters['max_features_preset']
+        else:
+            parameters['max_features'] = parameters['max_features_sample']
+            del parameters['max_features_sample']
         classifier = SKExtraTreesClassifier(**parameters)
         return classifier
 
@@ -815,6 +1456,131 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
 
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            n_estimators_options = OrderedDict()
+            n_estimators_options['distribution'] = 'Categorical'
+            n_estimators_options['categories'] = range(2, 20)
+
+            criterion_options = OrderedDict()
+            criterion_options['distribution'] = 'Categorical'
+            criterion_options['categories'] = ['gini', 'entropy']
+            criterion_options['probabilities'] = [0.5, 0.5]
+
+            max_features_use_preset_options = OrderedDict()
+            max_features_use_preset_options['distribution'] = 'Categorical'
+            max_features_use_preset_options['categories'] = [True, False]
+            max_features_use_preset_options['probabilities'] = [0.75, 0.25]
+
+            max_features_preset_options = OrderedDict()
+            max_features_preset_options['distribution'] = 'Categorical'
+            max_features_preset_options['categories'] = ['sqrt', 'log2', None]
+
+            max_features_sample_options = OrderedDict()
+            max_features_sample_options['distribution'] = 'Uniform'
+            max_features_sample_options['lower'] = 0.0
+            max_features_sample_options['upper'] = 1.0
+
+            max_depth_options = OrderedDict()
+            max_depth_options['distribution'] = 'LogUniform'
+            max_depth_options['lower'] = 0.0
+            max_depth_options['upper'] = 5.0
+            # TODO add discretization functionality?
+            max_depth_options['categories'] = range(int(np.rint(np.exp(0))), int(np.rint(np.exp(5.0))))
+
+            min_samples_split_options = OrderedDict()
+            min_samples_split_options['distribution'] = 'Uniform'
+            min_samples_split_options['lower'] = 2
+            min_samples_split_options['upper'] = 20
+            min_samples_split_options['categories'] = range(2, 20)
+
+            min_samples_leaf_options = OrderedDict()
+            min_samples_leaf_options['distribution'] = 'Uniform'
+            min_samples_leaf_options['lower'] = 1
+            min_samples_leaf_options['upper'] = 20
+            min_samples_leaf_options['categories'] = range(1, 20)
+
+            bootstrap_options = OrderedDict()
+            bootstrap_options['distribution'] = 'Categorical'
+            bootstrap_options['categories'] = [True, False]
+
+            oob_options = OrderedDict()
+            oob_options['distribution'] = 'Categorical'
+            oob_options['categories'] = [True, False]
+
+            learner_options = {'n_estimators': n_estimators_options,
+                               'criterion': criterion_options,
+                               'max_features_use_preset': max_features_use_preset_options,
+                               'max_features_preset': max_features_preset_options,
+                               'max_features_sample': max_features_sample_options,
+                               'max_depth': max_depth_options,
+                               'min_samples_split': min_samples_split_options,
+                               'min_samples_leaf': min_samples_leaf_options,
+                               'bootstrap': bootstrap_options,
+                               'oob_score': oob_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['ExtraTreesClassifier'][optimizer]
+
+        # Build priors
+        n_estimators_prior = Distribution.load(learner_parameters['n_estimators'], category_type='int')
+        criterion_prior = Distribution.load(learner_parameters['criterion'])
+        max_features_use_preset_prior = Distribution.load(learner_parameters['max_features_use_preset'], category_type='bool')
+        max_features_preset_prior = Distribution.load(learner_parameters['max_features_preset'], parse_none=True)
+        max_features_sample_prior = Distribution.load(learner_parameters['max_features_sample'])
+        max_depth_prior = Distribution.load(learner_parameters['max_depth'], category_type='int')
+        min_samples_split_prior = Distribution.load(learner_parameters['min_samples_split'], category_type='int')
+        min_samples_leaf_prior = Distribution.load(learner_parameters['min_samples_leaf'], category_type='int')
+        bootstrap_prior = Distribution.load(learner_parameters['bootstrap'], category_type='bool')
+        oob_score_prior = Distribution.load(learner_parameters['oob_score'], category_type='bool')
+
+        # Build parameters
+        n_estimators_param = Parameter('n_estimators', prior=n_estimators_prior, default=10)
+        criterion_param = Parameter('criterion', prior=criterion_prior, default='gini')
+        max_features_use_preset_param = Parameter('max_features_use_preset',
+                                                  prior=max_features_use_preset_prior,
+                                                  default=True)
+        max_features_preset_param = Parameter('max_features_preset',
+                                              prior=max_features_preset_prior,
+                                              default=None,
+                                              sample_if=lambda params: params['max_features_use_preset'])
+        max_features_sample_param = Parameter('max_features_sample',
+                                              prior=max_features_sample_prior,
+                                              default=1.0,
+                                              sample_if=lambda params: not params['max_features_use_preset'])
+        max_depth_param = Parameter('max_depth', prior=max_depth_prior, default=None)
+        min_samples_split_param = Parameter('min_samples_split', prior=min_samples_split_prior, default=2)
+        min_samples_leaf_param = Parameter('min_samples_leaf', prior=min_samples_leaf_prior, default=1)
+        bootstrap_param = Parameter('bootstrap', prior=bootstrap_prior, default=False)
+        oob_score_param = Parameter('oob_score', prior=oob_score_prior, default=False,
+                                    sample_if=lambda params: params['bootstrap'])
+
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['n_estimators'] = n_estimators_param
+        param_space['criterion'] = criterion_param
+        param_space['max_features_use_preset'] = max_features_use_preset_param
+        param_space['max_features_preset'] = max_features_preset_param
+        param_space['max_features_sample'] = max_features_sample_param
+        param_space['max_depth'] = max_depth_param
+        param_space['min_samples_split'] = min_samples_split_param
+        param_space['min_samples_leaf'] = min_samples_leaf_param
+        param_space['bootstrap'] = bootstrap_param
+        param_space['oob_score'] = oob_score_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
 
 class GradientBoostingClassifier(BaseClassifier):
     """Gradient boosting classifier."""
@@ -825,6 +1591,13 @@ class GradientBoostingClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Gradient boosting classifier.
         """
+        del parameters['max_features_use_preset']
+        if 'max_features_preset' in parameters:
+            parameters['max_features'] = parameters['max_features_preset']
+            del parameters['max_features_preset']
+        else:
+            parameters['max_features'] = parameters['max_features_sample']
+            del parameters['max_features_sample']
         classifier = SKGradientBoostingClassifier(**parameters)
         return classifier
 
@@ -852,6 +1625,132 @@ class GradientBoostingClassifier(BaseClassifier):
 
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            loss_options = OrderedDict()
+            loss_options['distribution'] = 'Categorical'
+            loss_options['categories'] = ['deviance']  # Only one loss?
+
+            learning_rate_options = OrderedDict()
+            learning_rate_options['distribution'] = 'Uniform'
+            learning_rate_options['lower'] = 0.0
+            learning_rate_options['upper'] = 1.0
+
+            n_estimators_options = OrderedDict()
+            n_estimators_options['distribution'] = 'LogUniform'
+            n_estimators_options['lower'] = 2.3
+            n_estimators_options['upper'] = 6.5
+            #n_estimators_options['discretize'] = 'round'
+
+            max_depth_options = OrderedDict()
+            max_depth_options['distribution'] = 'Uniform'
+            max_depth_options['lower'] = 2.0
+            max_depth_options['upper'] = 10.0
+            # TODO add discretization functionality?
+            #max_depth_options['discretize'] = 'round'
+
+            min_samples_split_options = OrderedDict()
+            min_samples_split_options['distribution'] = 'Uniform'
+            min_samples_split_options['lower'] = 2
+            min_samples_split_options['upper'] = 20
+            #min_samples_split_options['discretize'] = 'round'
+
+            min_samples_leaf_options = OrderedDict()
+            min_samples_leaf_options['distribution'] = 'Uniform'
+            min_samples_leaf_options['lower'] = 1
+            min_samples_leaf_options['upper'] = 20
+            #min_samples_leaf_options['discretize'] = 'round'
+
+            subsample_options = OrderedDict()
+            subsample_options['distribution'] = 'Uniform'
+            subsample_options['lower'] = 0.0
+            subsample_options['upper'] = 1.0
+
+            max_features_use_preset_options = OrderedDict()
+            max_features_use_preset_options['distribution'] = 'Categorical'
+            max_features_use_preset_options['categories'] = [True, False]
+            max_features_use_preset_options['probabilities'] = [0.75, 0.25]
+
+            max_features_preset_options = OrderedDict()
+            max_features_preset_options['distribution'] = 'Categorical'
+            max_features_preset_options['categories'] = ['sqrt', 'log2', None]
+
+            max_features_sample_options = OrderedDict()
+            max_features_sample_options['distribution'] = 'Uniform'
+            max_features_sample_options['lower'] = 0.0
+            max_features_sample_options['upper'] = 1.0
+
+            learner_options = {'loss': loss_options,
+                               'learning_rate': learning_rate_options,
+                               'n_estimators': n_estimators_options,
+                               'max_depth': max_depth_options,
+                               'min_samples_split': min_samples_split_options,
+                               'min_samples_leaf': min_samples_leaf_options,
+                               'subsample': subsample_options,
+                               'max_features_use_preset': max_features_use_preset_options,
+                               'max_features_preset': max_features_preset_options,
+                               'max_features_sample': max_features_sample_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['GradientBoostingClassifier'][optimizer]
+
+        # Build priors
+        loss_prior = Distribution.load(learner_parameters['loss'])
+        learning_rate_prior = Distribution.load(learner_parameters['learning_rate'])
+        n_estimators_prior = Distribution.load(learner_parameters['n_estimators'])
+        max_depth_prior = Distribution.load(learner_parameters['max_depth'])
+        min_samples_split_prior = Distribution.load(learner_parameters['min_samples_split'])
+        min_samples_leaf_prior = Distribution.load(learner_parameters['min_samples_leaf'])
+        subsample_prior = Distribution.load(learner_parameters['subsample'])
+        max_features_use_preset_prior = Distribution.load(learner_parameters['max_features_use_preset'], category_type='bool')
+        max_features_preset_prior = Distribution.load(learner_parameters['max_features_preset'], parse_none=True)
+        max_features_sample_prior = Distribution.load(learner_parameters['max_features_sample'])
+
+        # Build parameters
+        loss_param = Parameter('loss', prior=loss_prior, default='deviance')
+        learning_rate_param = Parameter('learning_rate', prior=learning_rate_prior, default=0.1)
+        n_estimators_param = Parameter('n_estimators', prior=n_estimators_prior, default=100, discretize='round')
+        max_depth_param = Parameter('max_depth', prior=max_depth_prior, default=3, discretize='round')
+        min_samples_split_param = Parameter('min_samples_split', prior=min_samples_split_prior, default=2, discretize='round')
+        min_samples_leaf_param = Parameter('min_samples_leaf', prior=min_samples_leaf_prior, default=1, discretize='round')
+        subsample_param = Parameter('subsample', prior=subsample_prior, default=1.0)
+        max_features_use_preset_param = Parameter('max_features_use_preset',
+                                                  prior=max_features_use_preset_prior,
+                                                  default=True)
+        max_features_preset_param = Parameter('max_features_preset',
+                                              prior=max_features_preset_prior,
+                                              default=None,
+                                              sample_if=lambda params: params['max_features_use_preset'])
+        max_features_sample_param = Parameter('max_features_sample',
+                                              prior=max_features_sample_prior,
+                                              default=1.0,
+                                              sample_if=lambda params: not params['max_features_use_preset'])
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['loss'] = loss_param
+        param_space['learning_rate'] = learning_rate_param
+        param_space['n_estimators'] = n_estimators_param
+        param_space['max_depth'] = max_depth_param
+        param_space['max_features_use_preset'] = max_features_use_preset_param
+        param_space['min_samples_split'] = min_samples_split_param
+        param_space['min_samples_leaf'] = min_samples_leaf_param
+        param_space['subsample'] = subsample_param
+        param_space['max_features_preset'] = max_features_preset_param
+        param_space['max_features_sample'] = max_features_sample_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
 
 class GaussianProcessClassifier(BaseClassifier):
     """Gaussian Process classifier."""
@@ -862,6 +1761,15 @@ class GaussianProcessClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Gaussian process classifier.
         """
+        if not parameters['estimate_ml']:
+            #del parameters['thetaL']
+            #del parameters['thetaU']
+            parameters['thetaL'] = None
+            parameters['thetaU'] = None
+        else:
+            parameters['thetaL'] = [parameters['thetaL']]
+            parameters['thetaU'] = [parameters['thetaU']]
+        del parameters['estimate_ml']
         classifier = GaussianProcess(**parameters)
         return classifier
 
@@ -896,6 +1804,117 @@ class GaussianProcessClassifier(BaseClassifier):
 
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            regr_options = OrderedDict()
+            regr_options['distribution'] = 'Categorical'
+            regr_options['categories'] = ['constant', 'linear', 'quadratic']  # Only one loss?
+
+            corr_options = OrderedDict()
+            corr_options['distribution'] = 'Categorical'
+            corr_options['categories'] = ['absolute_exponential', 'squared_exponential', 'generalized_exponential', 'cubic', 'linear']
+
+            #beta0 not modeled
+
+            theta0_options = OrderedDict()
+            theta0_options['distribution'] = 'Uniform'  # LogNormal?
+            theta0_options['lower'] = 0.0
+            theta0_options['upper'] = 1.0
+
+            estimate_ml_options = OrderedDict()
+            estimate_ml_options['distribution'] = 'Categorical'
+            estimate_ml_options['categories'] = [True, False]
+            estimate_ml_options['probabilities'] = [0.75, 0.25]
+
+            thetaL_options = OrderedDict()
+            thetaL_options['distribution'] = 'Uniform'  # LogNormal?
+            thetaL_options['lower'] = 0.0
+            thetaL_options['upper'] = 1.0
+
+            thetaU_options = OrderedDict()
+            thetaU_options['distribution'] = 'Uniform'  # LogNormal?
+            thetaU_options['lower'] = 0.0
+            thetaU_options['upper'] = 1.0
+
+            normalize_options = OrderedDict()
+            normalize_options['distribution'] = 'Categorical'
+            normalize_options['categories'] = [True, False]
+            normalize_options['probabilities'] = [0.75, 0.25]
+
+            nugget_options = OrderedDict()
+            nugget_options['distribution'] = 'uniform'
+            nugget_options['lower'] = 5 * np.finfo(float).eps
+            nugget_options['upper'] = 1.0  # ?
+
+            optimizer_options = OrderedDict()
+            optimizer_options['distribution'] = 'Categorical'
+            optimizer_options['categories'] = ['fmin_cobyla', 'Welch']
+            optimizer_options['probabilities'] = [0.5, 0.5]
+
+            learner_options = {'regr': regr_options,
+                               'corr': corr_options,
+                               'theta0': theta0_options,
+                               'estimate_ml': estimate_ml_options,
+                               'thetaL': thetaL_options,
+                               'thetaU': thetaU_options,
+                               'normalize': normalize_options,
+                               'nugget': nugget_options,
+                               'optimizer': optimizer_options,
+                               'enabled': False}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['GaussianProcessClassifier'][optimizer]
+
+        # Build priors
+        regr_prior = Distribution.load(learner_parameters['regr'])
+        corr_prior = Distribution.load(learner_parameters['corr'])
+        theta0_prior = Distribution.load(learner_parameters['theta0'])
+        estimate_ml_prior = Distribution.load(learner_parameters['estimate_ml'], category_type='bool')
+        thetaL_prior = Distribution.load(learner_parameters['thetaL'])
+        thetaU_prior = Distribution.load(learner_parameters['thetaU'])
+        normalize_prior = Distribution.load(learner_parameters['normalize'], category_type='bool')
+        nugget_prior = Distribution.load(learner_parameters['nugget'])
+        optimizer_prior = Distribution.load(learner_parameters['optimizer'])
+
+        # Build parameters
+        regr_param = Parameter('regr', prior=regr_prior, default='constant')
+        corr_param = Parameter('corr', prior=corr_prior, default='squared_exponential')
+        theta0_param = Parameter('theta0', prior=theta0_prior, default=0.1)
+        estimate_ml_param = Parameter('estimate_ml', prior=estimate_ml_prior, default=False)
+        thetaU_param = Parameter('thetaU', prior=thetaU_prior, default=None,
+                                 sample_if=lambda params: params['estimate_ml'])
+        thetaL_param = Parameter('thetaL', prior=thetaL_prior, default=None,
+                                 sample_if=lambda params: params['estimate_ml'],
+                                 valid_if=lambda value, params: params['thetaU'] > value,
+                                 action_if_invalid='resample')
+        normalize_param = Parameter('normalize', prior=normalize_prior, default=True)
+        nugget_param = Parameter('nugget', prior=nugget_prior, default=10 * np.finfo(float).eps)
+        optimizer_param = Parameter('optimizer', prior=optimizer_prior, default='fmin_cobyla')
+
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['regr'] = regr_param
+        param_space['corr'] = corr_param
+        param_space['theta0'] = theta0_param
+        param_space['estimate_ml'] = estimate_ml_param
+        param_space['thetaL'] = thetaL_param
+        param_space['thetaU'] = thetaU_param
+        param_space['normalize'] = normalize_param
+        param_space['nugget'] = nugget_param
+        param_space['optimizer'] = optimizer_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
 
 class SVMClassifier(BaseClassifier):
     """Support Vector Machine classifier (libsvm)."""
@@ -906,6 +1925,8 @@ class SVMClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Support Vector Machine classifier.
         """
+        parameters['kernel'] = str(parameters['kernel'])  # in case numpy.string_ is passed
+        parameters['probability'] = True  # To enable predict_proba
         classifier = SVC(**parameters)
         return classifier
 
@@ -936,6 +1957,108 @@ class SVMClassifier(BaseClassifier):
         '''
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            C_options = OrderedDict()
+            C_options['distribution'] = 'LogNormal'  # ?
+            C_options['mean'] = 1.0
+            C_options['stdev'] = 0.5
+
+            kernel_options = OrderedDict()
+            kernel_options['distribution'] = 'Categorical'
+            kernel_options['categories'] = ['linear', 'poly', 'rbf', 'sigmoid']
+            kernel_options['probabilities'] = [0.2, 0.2, 0.4, 0.2]
+
+            degree_options = OrderedDict()
+            degree_options['distribution'] = 'Uniform'
+            degree_options['lower'] = 2
+            degree_options['upper'] = 5
+            #degree_options['discretize'] = 'round'
+
+            gamma_options = OrderedDict()
+            gamma_options['distribution'] = 'Uniform'
+            gamma_options['lower'] = 0.0
+            gamma_options['upper'] = 1.0
+
+            coef0_options = OrderedDict()
+            coef0_options['distribution'] = 'Uniform'
+            coef0_options['lower'] = 0.0
+            coef0_options['upper'] = 1.0
+
+            shrinking_options = OrderedDict()
+            shrinking_options['distribution'] = 'Categorical'
+            shrinking_options['categories'] = [True, False]
+            shrinking_options['probabilities'] = [0.75, 0.25]
+
+            tolerance_options = OrderedDict()
+            tolerance_options['distribution'] = 'LogNormal'
+            tolerance_options['mean'] = 1e-4
+            tolerance_options['stdev'] = 1.0
+
+            class_weight_options = OrderedDict()
+            class_weight_options['distribution'] = 'Categorical'
+            class_weight_options['categories'] = ['auto', None]
+            class_weight_options['probabilities'] = [0.75, 0.25]
+
+            learner_options = {'C': C_options,
+                               'kernel': kernel_options,
+                               'degree': degree_options,
+                               'gamma': gamma_options,
+                               'coef0': coef0_options,
+                               'shrinking': shrinking_options,
+                               'tolerance': tolerance_options,
+                               'class_weight': class_weight_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['SVMClassifier'][optimizer]
+
+        # Build priors
+        C_prior = Distribution.load(learner_parameters['C'])
+        kernel_prior = Distribution.load(learner_parameters['kernel'])
+        degree_prior = Distribution.load(learner_parameters['degree'])
+        gamma_prior = Distribution.load(learner_parameters['gamma'])
+        coef0_prior = Distribution.load(learner_parameters['coef0'])
+        shrinking_prior = Distribution.load(learner_parameters['shrinking'], category_type='bool')
+        tolerance_prior = Distribution.load(learner_parameters['tolerance'])
+        class_weight_prior = Distribution.load(learner_parameters['class_weight'], parse_none=True)
+
+        # Build parameters
+        C_param = Parameter('C', prior=C_prior, default=1.0)
+        kernel_param = Parameter('kernel', prior=kernel_prior, default='rbf')
+        degree_param = Parameter('degree', prior=degree_prior, default=3,
+                                 sample_if=lambda params: params['kernel'] == 'poly',
+                                 discretize='round')
+        gamma_param = Parameter('gamma', prior=gamma_prior, default=0.0,
+                                sample_if=lambda params: params['kernel'] in ('rbf', 'poly', 'sigmoid', ))
+        coef0_param = Parameter('coef0', prior=coef0_prior, default=0.0,
+                                sample_if=lambda params: params['kernel'] in ('poly', 'sigmoid', ))
+        shrinking_param = Parameter('shrinking', prior=shrinking_prior, default=True)
+        tolerance_param = Parameter('tol', prior=tolerance_prior, default=1e-3)
+        class_weight_param = Parameter('class_weight', prior=class_weight_prior, default=None)
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['C'] = C_param
+        param_space['kernel'] = kernel_param
+        param_space['degree'] = degree_param
+        param_space['gamma'] = gamma_param
+        param_space['coef0'] = coef0_param
+        param_space['shrinking'] = shrinking_param
+        param_space['tol'] = tolerance_param
+        param_space['class_weight'] = class_weight_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
 
 class LinearSVMClassifier(BaseClassifier):
     """Linear Support Vector Machine classifier implementation (liblinear)."""
@@ -945,6 +2068,12 @@ class LinearSVMClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Linear Support Vector Machine classifier.
         """
+        if 'ovr_valid' in parameters:
+            penalty, loss, dual = parameters['ovr_valid'].split('_')
+            parameters['loss'] = loss
+            parameters['penalty'] = penalty
+            parameters['dual'] = dual.lower() == 'true'
+            del parameters['ovr_valid']
         classifier = LinearSVC(**parameters)
         #Log.write("{classifier}: {params}".format(classifier=self.__class__.__name__, params=parameters))
         return classifier
@@ -971,6 +2100,132 @@ class LinearSVMClassifier(BaseClassifier):
         #param_space['tol'] = ChoiceParameter([1e-4, 1e-3])
         return param_space
 
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            C_options = OrderedDict()
+            C_options['distribution'] = 'LogNormal'  # ?
+            C_options['mean'] = 1.0
+            C_options['stdev'] = 0.5
+
+            ovr_valid_options = OrderedDict()  # Check sklearn/svm/base.py _get_solver_type
+            ovr_valid_options['distribution'] = 'Categorical'
+            ovr_valid_options['categories'] = ['l1_l2_False', 'l2_l1_True', 'l2_l2_True', 'l2_l2_False']
+
+            '''
+            loss_options = OrderedDict()
+            loss_options['distribution'] = 'Categorical'
+            loss_options['categories'] = ['l1', 'l2']
+
+            penalty_options = OrderedDict()
+            penalty_options['distribution'] = 'Categorical'
+            penalty_options['categories'] = ['l1', 'l2']
+
+            dual_options = OrderedDict()
+            dual_options['distribution'] = 'Categorical'
+            dual_options['categories'] = [True, False]
+            dual_options['probabilities'] = [0.5, 0.5]
+            '''
+
+            tolerance_options = OrderedDict()
+            tolerance_options['distribution'] = 'LogNormal'
+            tolerance_options['mean'] = 1e-4
+            tolerance_options['stdev'] = 1.0
+
+            multi_class_options = OrderedDict()
+            multi_class_options['distribution'] = 'Categorical'
+            multi_class_options['categories'] = ['ovr', 'crammer_singer']
+            multi_class_options['probabilities'] = [0.75, 0.25]
+
+            fit_intercept_options = OrderedDict()
+            fit_intercept_options['distribution'] = 'Categorical'
+            fit_intercept_options['categories'] = [True, False]
+            fit_intercept_options['probabilities'] = [0.5, 0.5]
+
+            intercept_scaling_options = OrderedDict()
+            intercept_scaling_options['distribution'] = 'Uniform'
+            intercept_scaling_options['lower'] = 0.0
+            intercept_scaling_options['upper'] = 5.0
+
+            class_weight_options = OrderedDict()
+            class_weight_options['distribution'] = 'Categorical'
+            class_weight_options['categories'] = [None, 'auto']
+            class_weight_options['probabilities'] = [0.5, 0.5]
+
+            learner_options = {'C': C_options,
+                               'ovr_valid': ovr_valid_options,
+                               #'loss': loss_options,
+                               #'penalty': penalty_options,
+                               #'dual': dual_options,
+                               'tolerance': tolerance_options,
+                               'multi_class': multi_class_options,
+                               'fit_intercept': fit_intercept_options,
+                               'intercept_scaling': intercept_scaling_options,
+                               'class_weight': class_weight_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['LinearSVMClassifier'][optimizer]
+
+        # Build priors
+        C_prior = Distribution.load(learner_parameters['C'])
+        ovr_valid_prior = Distribution.load(learner_parameters['ovr_valid'])
+        """
+        loss_prior = Distribution.load(learner_parameters['loss'])
+        penalty_prior = Distribution.load(learner_parameters['penalty'])
+        dual_prior = Distribution.load(learner_parameters['dual'], category_type='bool')
+        """
+        tolerance_prior = Distribution.load(learner_parameters['tolerance'])
+        multi_class_prior = Distribution.load(learner_parameters['multi_class'])
+        fit_intercept_prior = Distribution.load(learner_parameters['fit_intercept'], category_type='bool')
+        intercept_scaling_prior = Distribution.load(learner_parameters['intercept_scaling'])
+        class_weight_prior = Distribution.load(learner_parameters['class_weight'], parse_none=True)
+
+        # Build parameters
+        C_param = Parameter('C', prior=C_prior, default=1.0)
+        ovr_valid_param = Parameter('ovr_valid', prior=ovr_valid_prior, default='l2_l2_True',
+                                    sample_if=lambda params: params['multi_class'] != 'crammer_singer')
+        """
+        loss_param = Parameter('loss', prior=loss_prior, default='l2',
+                               sample_if=lambda params: params['multi_class'] != 'crammer_singer')
+        penalty_param = Parameter('penalty', prior=penalty_prior, default='l2',
+                                  sample_if=lambda params: params['multi_class'] != 'crammer_singer')
+        dual_param = Parameter('dual', prior=dual_prior, default=True,
+                               sample_if=lambda params: params['multi_class'] != 'crammer_singer')
+        """
+        tolerance_param = Parameter('tolerance', prior=tolerance_prior, default=1e-4)
+        multi_class_param = Parameter('multi_class', prior=multi_class_prior, default='ovr')
+        fit_intercept_param = Parameter('fit_intercept', prior=fit_intercept_prior, default=True)
+        intercept_scaling_param = Parameter('intercept_scaling', prior=intercept_scaling_prior, default=1,
+                                            sample_if=lambda params: params['fit_intercept'])
+
+        class_weight_param = Parameter('class_weight', prior=class_weight_prior, default=None)
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['C'] = C_param
+        param_space['ovr_valid'] = ovr_valid_param
+        """
+        param_space['loss'] = loss_param
+        param_space['penalty'] = penalty_param
+        param_space['dual'] = dual_param
+        """
+        param_space['tol'] = tolerance_param
+        param_space['multi_class'] = multi_class_param
+        param_space['fit_intercept'] = fit_intercept_param
+        param_space['intercept_scaling'] = intercept_scaling_param
+        param_space['class_weight'] = class_weight_param
+        param_space['random_state'] = random_state_param
+        return param_space
+
 
 class NuSVMClassifier(BaseClassifier):
     """Nu-Support Vector Machine classifier."""
@@ -981,6 +2236,8 @@ class NuSVMClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Nu-support Vector classifier
         """
+        parameters['kernel'] = str(parameters['kernel'])  # in case numpy.string_ is passed
+        parameters['probability'] = True  # To enable predict_proba
         classifier = NuSVC(**parameters)
         return classifier
 
@@ -1000,6 +2257,98 @@ class NuSVMClassifier(BaseClassifier):
         # param_space['class_weight'] = ?
         # param_space['random_state'] = ?
 
+        return param_space
+
+    @classmethod
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            nu_options = OrderedDict()
+            nu_options['distribution'] = 'Uniform'
+            nu_options['lower'] = 0.0
+            nu_options['upper'] = 1.0
+
+            kernel_options = OrderedDict()
+            kernel_options['distribution'] = 'Categorical'
+            kernel_options['categories'] = ['linear', 'poly', 'rbf', 'sigmoid']
+            kernel_options['probabilities'] = [0.2, 0.2, 0.4, 0.2]
+
+            degree_options = OrderedDict()
+            degree_options['distribution'] = 'Uniform'
+            degree_options['lower'] = 2
+            degree_options['upper'] = 5
+
+            gamma_options = OrderedDict()
+            gamma_options['distribution'] = 'Uniform'
+            gamma_options['lower'] = 0.0
+            gamma_options['upper'] = 1.0
+
+            coef0_options = OrderedDict()
+            coef0_options['distribution'] = 'Uniform'
+            coef0_options['lower'] = 0.0
+            coef0_options['upper'] = 1.0
+
+            shrinking_options = OrderedDict()
+            shrinking_options['distribution'] = 'Categorical'
+            shrinking_options['categories'] = [True, False]
+            shrinking_options['probabilities'] = [0.75, 0.25]
+
+            tolerance_options = OrderedDict()
+            tolerance_options['distribution'] = 'LogNormal'
+            tolerance_options['mean'] = 1e-4
+            tolerance_options['stdev'] = 1.0
+
+            learner_options = {'nu': nu_options,
+                               'kernel': kernel_options,
+                               'degree': degree_options,
+                               'gamma': gamma_options,
+                               'coef0': coef0_options,
+                               'shrinking': shrinking_options,
+                               'tolerance': tolerance_options,
+                               'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        learner_parameters = parameters['Classifiers']['NuSVMClassifier'][optimizer]
+
+        # Build priors
+        nu_prior = Distribution.load(learner_parameters['nu'])
+        kernel_prior = Distribution.load(learner_parameters['kernel'])
+        degree_prior = Distribution.load(learner_parameters['degree'])
+        gamma_prior = Distribution.load(learner_parameters['gamma'])
+        coef0_prior = Distribution.load(learner_parameters['coef0'])
+        shrinking_prior = Distribution.load(learner_parameters['shrinking'], category_type='bool')
+        tolerance_prior = Distribution.load(learner_parameters['tolerance'])
+
+        # Build parameters
+        nu_param = Parameter('nu', prior=nu_prior, default=0.5)
+        kernel_param = Parameter('kernel', prior=kernel_prior, default='rbf')
+        degree_param = Parameter('degree', prior=degree_prior, default=3,
+                                 sample_if=lambda params: params['kernel'] == 'poly',
+                                 discretize='round')
+        gamma_param = Parameter('gamma', prior=gamma_prior, default=0.0,
+                                sample_if=lambda params: params['kernel'] in ('rbf', 'poly', 'sigmoid', ))
+        coef0_param = Parameter('coef0', prior=coef0_prior, default=0.0,
+                                sample_if=lambda params: params['kernel'] in ('poly', 'sigmoid', ))
+        shrinking_param = Parameter('shrinking', prior=shrinking_prior, default=True)
+        tolerance_param = Parameter('tol', prior=tolerance_prior, default=1e-3)
+        random_state_param = parameters['Global'].as_int('randomstate')
+
+        # Create parameter space
+        param_space = ParameterSpace()
+        param_space['nu'] = nu_param
+        param_space['kernel'] = kernel_param
+        param_space['degree'] = degree_param
+        param_space['gamma'] = gamma_param
+        param_space['coef0'] = coef0_param
+        param_space['shrinking'] = shrinking_param
+        param_space['tol'] = tolerance_param
+        param_space['random_state'] = random_state_param
         return param_space
 
 
@@ -1022,12 +2371,22 @@ class LinearDiscriminantClassifier(BaseClassifier):
             return trained
 
     @classmethod
-    def create_default_params(self):
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            learner_options = {'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        #learner_parameters = parameters['Classifiers']['LinearDiscriminantClassifier'][optimizer]
+
+        # Create parameter space
         param_space = ParameterSpace()
-
-        param_space['n_components'] = ChoiceParameter([None])  # ?
-        param_space['priors'] = ChoiceParameter([None])  # ?
-
         return param_space
 
 
@@ -1050,10 +2409,34 @@ class QuadraticDiscriminantClassifier(BaseClassifier):
         return classifier
 
     @classmethod
-    def create_default_params(self):
+    def get_default_config(self, optimizer=None):
+        if optimizer == 'KDEOptimizer':
+            reg_param_options = OrderedDict()
+            reg_param_options['distribution'] = 'Uniform'
+            reg_param_options['lower'] = 0.0
+            reg_param_options['upper'] = 1.0
+
+            learner_options = {'reg_param': reg_param_options, 'enabled': True}
+        elif optimizer is None:
+            learner_options = OrderedDict()
+            for optimizer in ('KDEOptimizer',):
+                learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_parameter_space(self, parameters, optimizer):
+        # Read learner settings to build priors
+        if self.__name__ not in parameters['Classifiers']:
+            parameters['Classifiers'][self.__name__] = self.get_default_config()
+        learner_parameters = parameters['Classifiers'][self.__name__][optimizer]
+
+        # Build priors
+        reg_param_prior = Distribution.load(learner_parameters['reg_param'])
+
+        # Build parameters
+        reg_param = Parameter('reg_param', prior=reg_param_prior, default=0.0)
+
+        # Create parameter space
         param_space = ParameterSpace()
-
-        param_space['priors'] = ChoiceParameter([None])  # ?
-        param_space['reg_param'] = ChoiceParameter([0.0])  # ?
-
+        param_space['reg_param'] = reg_param
         return param_space
