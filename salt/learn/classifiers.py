@@ -172,6 +172,34 @@ class LogisticRegressionClassifier(BaseClassifier):
         return learner_options
 
     @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Categorical parameters
+        param_space['penalty'] = param.CategoricalParameter('penalty', {'l1': 0.05, 'l2': 0.95}, default='l2')
+        param_space['penalty'].categories['l2']['dual'] = param.CategoricalParameter('dual', {True: 0.25, False: 0.75}, default=False)
+        param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', {True: 0.5, False: 0.5}, default=False)
+        param_space['fit_intercept'].categories[True]['intercept_scaling'] = param.NumericalParameter('intercept_scaling', prior=param.Uniform(0.0, 1.0), default=0.0)
+        param_space['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+
+        # Numerical parameters
+        param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=0, stdev=1), default=0.0001)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['LogisticRegressionClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+
+    @classmethod
     def create_parameter_space(self, parameters, optimizer):
         # Read learner settings to build priors
         learner_parameters = parameters['Classifiers']['LogisticRegressionClassifier'][optimizer]  # learner_settings['log_reg_classif']
@@ -223,6 +251,13 @@ class SGDClassifier(BaseClassifier):
         """
         classifier = SKSGDClassifier(**parameters)
         return classifier
+
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['SGDClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
 
     @classmethod
     def get_default_config(self, optimizer=None):
@@ -314,6 +349,41 @@ class SGDClassifier(BaseClassifier):
         return learner_options
 
     @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Categorical parameters
+        param_space['loss'] = param.CategoricalParameter('loss',
+                                                         ['hinge', 'log', 'modified_huber',
+                                                          'squared_hinge', 'perceptron',
+                                                          'squared_loss',
+                                                          'huber', 'epsilon_insensitive',
+                                                          'squared_epsilon_insensitive'],
+                                                         default='hinge')
+        param_epsilon = param.NumericalParameter('epsilon', prior=param.LogNormal(mean=5.0, stdev=1.0), default=0.1)
+        param_space['loss'].categories['huber']['epsilon'] = param_epsilon
+        param_space['loss'].categories['epsilon_insensitive']['epsilon'] = param_epsilon
+        param_space['loss'].categories['squared_epsilon_insensitive']['epsilon'] = param_epsilon
+        param_space['penalty'] = param.CategoricalParameter('penalty', {'l1': 0.05, 'l2': 0.85, 'elasticnet': 0.1}, default='l2')
+        param_space['penalty'].categories['elasticnet']['l1_ratio'] = param.NumericalParameter('dual', prior=param.Uniform(lower=0.0, upper=1.0), default=0.15)
+        param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', {True: 0.5, False: 0.5}, default=False)
+        param_space['shuffle'] = param.CategoricalParameter('shuffle', {True: 0.5, False: 0.5}, default=False)
+        param_space['learning_rate'] = param.CategoricalParameter('learning_rate', {'constant': 0.33333, 'optimal': 0.33333, 'invscaling': 0.33333}, default='optimal')
+        param_space['learning_rate'].categories['invscaling']['power_t'] = param.NumericalParameter('power_t', prior=param.Uniform(lower=0.0, upper=1.0), default=0.5)
+        param_space['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+        param_space['warm_start'] = param.CategoricalParameter('warm_start', {True: 0.5, False: 0.5}, default=False)
+
+        # Numerical parameters
+        param_space['alpha'] = param.NumericalParameter('alpha', prior=param.Uniform(5e-5, 5e-4), default=1e-4)
+        param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=5, discretize=True)
+        param_space['eta0'] = param.NumericalParameter('eta0', prior=param.Uniform(lower=0.0, upper=1.0), default=0.0)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
     def create_parameter_space(self, parameters, optimizer):
         # Read learner settings to build priors
         learner_parameters = parameters['Classifiers']['SGDClassifier'][optimizer]
@@ -399,6 +469,13 @@ class PassiveAggressiveClassifier(BaseClassifier):
         return classifier
 
     @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['PassiveAggressiveClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
     def get_default_config(self, optimizer=None):
         if optimizer == 'KDEOptimizer':
             C_options = OrderedDict()
@@ -443,6 +520,25 @@ class PassiveAggressiveClassifier(BaseClassifier):
             learner_options = OrderedDict()
             for optimizer in ('KDEOptimizer',):
                 learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Categorical parameters
+        param_space['loss'] = param.CategoricalParameter('loss', ['hinge', 'squared_hinge'], default='hinge')
+        param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', {True: 0.5, False: 0.5}, default=True)
+        param_space['shuffle'] = param.CategoricalParameter('shuffle', {True: 0.5, False: 0.5}, default=False)
+        param_space['warm_start'] = param.CategoricalParameter('warm_start', {True: 0.5, False: 0.5}, default=False)
+
+        # Numerical parameters
+        param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=1.0)
+        param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=0.0, stdev=1.0), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
         return learner_options
 
     @classmethod
@@ -567,6 +663,32 @@ class RidgeClassifier(BaseClassifier):
         return learner_options
 
     @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['RidgeClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Categorical parameters
+        param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', [True, False], default=True)
+        param_space['normalize'] = param.CategoricalParameter('fit_intercept', [True, False], default=True)
+        param_space['solver'] = param.CategoricalParameter('solver', ['svd', 'dense_cholesky', 'lsqr', 'sparse_cg'], default='auto')
+
+        # Numerical parameters
+        param_space['alpha'] = param.NumericalParameter('alpha', prior=param.LogNormal(mean=0.0, stdev=0.5), default=1.0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=np.log(0.001), stdev=0.5), default=0.001)
+        param_space['max_iter'] = param.NumericalParameter('max_iter', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=None, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
     def create_parameter_space(self, parameters, optimizer):
         # Read learner settings to build priors
         learner_parameters = parameters['Classifiers']['RidgeClassifier'][optimizer]
@@ -687,6 +809,23 @@ class GaussianNBClassifier(BaseClassifier):
             learner_options = OrderedDict()
             for optimizer in ('KDEOptimizer',):
                 learner_options[optimizer] = self.get_default_config(optimizer)
+        return learner_options
+
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['GaussianNBClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
         return learner_options
 
     @classmethod
@@ -875,6 +1014,48 @@ class KNNClassifier(BaseClassifier):
         param_space['w'] = w_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['KNNClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        # WMINKOWSKI IS PROBLEMATIC
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Categorical parameters
+        param_space['weights'] = param.CategoricalParameter('weights', ['uniform', 'distance'], default='uniform')
+        param_space['algorithm'] = param.CategoricalParameter('algorithm', ['ball_tree', 'kd_tree', 'brute'], default='auto')
+        #param_ball_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'seuclidean', 'minkowski', 'wminkowski'], default='minkowski')
+        param_ball_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_ball_tree_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_ball_tree_metric.categories['wminkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_ball_tree_metric.categories['wminkowski']['w'] = param.NumericalParameter('w', prior=param.Uniform(0.0, 1.0), default=0.5)
+        param_kd_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_kd_tree_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_brute_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'seuclidean', 'minkowski', 'wminkowski'], default='minkowski')
+        param_brute_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_brute_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_brute_metric.categories['wminkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_brute_metric.categories['wminkowski']['w'] = param.NumericalParameter('w', prior=param.Uniform(0.0, 1.0), default=0.5)
+
+        param_space['algorithm'].categories['ball_tree']['metric'] = param_ball_tree_metric
+        param_space['algorithm'].categories['ball_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        param_space['algorithm'].categories['kd_tree']['metric'] = param_kd_tree_metric
+        param_space['algorithm'].categories['kd_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        param_space['algorithm'].categories['brute']['metric'] = param_brute_metric
+
+        # Numerical parameters
+        param_space['n_neighbors'] = param.NumericalParameter('n_neighbors', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=5, discretize=True)
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class RadiusNeighborsClassifier(BaseClassifier):
     """Classifier based on neighbors voting within a given radius."""
@@ -1001,6 +1182,48 @@ class RadiusNeighborsClassifier(BaseClassifier):
         param_space['w'] = w_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['RadiusNeighborsClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        # WMINKOWSKI IS PROBLEMATIC
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Categorical parameters
+        param_space['weights'] = param.CategoricalParameter('weights', ['uniform', 'distance'], default='uniform')
+        param_space['algorithm'] = param.CategoricalParameter('algorithm', ['ball_tree', 'kd_tree', 'brute'], default='auto')
+        #param_ball_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'seuclidean', 'minkowski', 'wminkowski'], default='minkowski')
+        param_ball_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_ball_tree_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_ball_tree_metric.categories['wminkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_ball_tree_metric.categories['wminkowski']['w'] = param.NumericalParameter('w', prior=param.Uniform(0.0, 1.0), default=0.5)
+        param_kd_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_kd_tree_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_brute_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'seuclidean', 'minkowski', 'wminkowski'], default='minkowski')
+        param_brute_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_brute_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_brute_metric.categories['wminkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        #param_brute_metric.categories['wminkowski']['w'] = param.NumericalParameter('w', prior=param.Uniform(0.0, 1.0), default=0.5)
+
+        param_space['algorithm'].categories['ball_tree']['metric'] = param_ball_tree_metric
+        param_space['algorithm'].categories['ball_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        param_space['algorithm'].categories['kd_tree']['metric'] = param_kd_tree_metric
+        param_space['algorithm'].categories['kd_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        param_space['algorithm'].categories['brute']['metric'] = param_brute_metric
+
+        # Numerical parameters
+        param_space['radius'] = param.NumericalParameter('radius', prior=param.LogUniform(lower=-10.0, upper=10.0), default=1.0)
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class NearestCentroidClassifier(BaseClassifier):
     """Nearest centroid classifier."""
@@ -1088,6 +1311,31 @@ class NearestCentroidClassifier(BaseClassifier):
         param_space['shrink_threshold'] = shrink_threshold_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['NearestCentroidClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['metric'] = param.CategoricalParameter('metric', ['euclidean', 'l1', 'l2', 'manhattan', 'cityblock', 'braycurtis',
+                                                                      'canberra', 'chebyshev', 'correlation', 'cosine', 'dice', 'hamming',
+                                                                      'jaccard', 'kulsinski', 'mahalanobis',
+                                                                      'matching', 'minkowski', 'rogerstanimoto',
+                                                                      'russellrao', 'seuclidean', 'sokalmichener',
+                                                                      'sokalsneath', 'sqeuclidean', 'yule'], default='euclidean')
+        param_space['shrink_threshold'] = param.NumericalParameter('shrink_threshold', prior=param.LogUniform(lower=-10.0, upper=10.0), default=None)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class DecisionTreeClassifier(BaseClassifier):
     """Decision tree classifier."""
@@ -1098,13 +1346,14 @@ class DecisionTreeClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Decision tree classifier.
         """
-        del parameters['max_features_use_preset']
-        if 'max_features_preset' in parameters:
-            parameters['max_features'] = parameters['max_features_preset']
-            del parameters['max_features_preset']
-        else:
-            parameters['max_features'] = parameters['max_features_sample']
-            del parameters['max_features_sample']
+        if 'max_features_use_preset' in parameters:
+            del parameters['max_features_use_preset']
+            if 'max_features_preset' in parameters:
+                parameters['max_features'] = parameters['max_features_preset']
+                del parameters['max_features_preset']
+            else:
+                parameters['max_features'] = parameters['max_features_sample']
+                del parameters['max_features_sample']
 
         classifier = SKDecisionTreeClassifier(**parameters)
         return classifier
@@ -1222,6 +1471,34 @@ class DecisionTreeClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['DecisionTreeClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['criterion'] = param.CategoricalParameter('criterion', ['gini', 'entropy'], default='gini')
+        param_space['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', [True, False], default=False)
+        param_max_features_preset = param.CategoricalParameter('max_features_preset', ['sqrt', 'log2', None], default=None)
+        param_space['max_features_use_preset'].categories[True]['max_features_preset'] = param_max_features_preset
+        param_max_features_sample = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
+        param_space['max_features_use_preset'].categories[False]['max_features_sample'] = param_max_features_sample
+
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class ExtraTreeClassifier(BaseClassifier):
     """Extremely randomized tree classifier."""
@@ -1234,13 +1511,14 @@ class ExtraTreeClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Extremely randomized decision tree classifier.
         """
-        del parameters['max_features_use_preset']
-        if 'max_features_preset' in parameters:
-            parameters['max_features'] = parameters['max_features_preset']
-            del parameters['max_features_preset']
-        else:
-            parameters['max_features'] = parameters['max_features_sample']
-            del parameters['max_features_sample']
+        if 'max_features_use_preset' in parameters:
+            del parameters['max_features_use_preset']
+            if 'max_features_preset' in parameters:
+                parameters['max_features'] = parameters['max_features_preset']
+                del parameters['max_features_preset']
+            else:
+                parameters['max_features'] = parameters['max_features_sample']
+                del parameters['max_features_sample']
         classifier = SKExtraTreeClassifier(**parameters)
         return classifier
 
@@ -1268,13 +1546,14 @@ class RandomForestClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Random forest classifier.
         """
-        del parameters['max_features_use_preset']
-        if 'max_features_preset' in parameters:
-            parameters['max_features'] = parameters['max_features_preset']
-            del parameters['max_features_preset']
-        else:
-            parameters['max_features'] = parameters['max_features_sample']
-            del parameters['max_features_sample']
+        if 'max_features_use_preset' in parameters:
+            del parameters['max_features_use_preset']
+            if 'max_features_preset' in parameters:
+                parameters['max_features'] = parameters['max_features_preset']
+                del parameters['max_features_preset']
+            else:
+                parameters['max_features'] = parameters['max_features_sample']
+                del parameters['max_features_sample']
         classifier = SKRandomForestClassifier(**parameters)
         return classifier
 
@@ -1419,6 +1698,37 @@ class RandomForestClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['RandomForestClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['criterion'] = param.CategoricalParameter('criterion', ['gini', 'entropy'], default='gini')
+        param_space['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', [True, False], default=False)
+        param_max_features_preset = param.CategoricalParameter('max_features_preset', ['sqrt', 'log2', None], default=None)
+        param_space['max_features_use_preset'].categories[True]['max_features_preset'] = param_max_features_preset
+        param_max_features_sample = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
+        param_space['max_features_use_preset'].categories[False]['max_features_sample'] = param_max_features_sample
+        param_space['bootstrap'] = param.CategoricalParameter('bootstrap', [True, False], default=True)
+        param_space['bootstrap'].categories[True]['oob_score'] = param.CategoricalParameter('oob_score', [True, False], default=False)
+
+        param_space['n_estimators'] = param.NumericalParameter('n_estimators', prior=param.Uniform(lower=2, upper=20), default=10, discretize=True)
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class ExtraTreeEnsembleClassifier(BaseClassifier):
     """Classifier based on a number of randomized decision trees."""
@@ -1429,13 +1739,14 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Extra trees classifier.
         """
-        del parameters['max_features_use_preset']
-        if 'max_features_preset' in parameters:
-            parameters['max_features'] = parameters['max_features_preset']
-            del parameters['max_features_preset']
-        else:
-            parameters['max_features'] = parameters['max_features_sample']
-            del parameters['max_features_sample']
+        if 'max_features_use_preset' in parameters:
+            del parameters['max_features_use_preset']
+            if 'max_features_preset' in parameters:
+                parameters['max_features'] = parameters['max_features_preset']
+                del parameters['max_features_preset']
+            else:
+                parameters['max_features'] = parameters['max_features_sample']
+                del parameters['max_features_sample']
         classifier = SKExtraTreesClassifier(**parameters)
         return classifier
 
@@ -1581,6 +1892,37 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['ExtraTreesClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['criterion'] = param.CategoricalParameter('criterion', ['gini', 'entropy'], default='gini')
+        param_space['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', [True, False], default=False)
+        param_max_features_preset = param.CategoricalParameter('max_features_preset', ['sqrt', 'log2', None], default=None)
+        param_space['max_features_use_preset'].categories[True]['max_features_preset'] = param_max_features_preset
+        param_max_features_sample = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
+        param_space['max_features_use_preset'].categories[False]['max_features_sample'] = param_max_features_sample
+        param_space['bootstrap'] = param.CategoricalParameter('bootstrap', [True, False], default=True)
+        param_space['bootstrap'].categories[True]['oob_score'] = param.CategoricalParameter('oob_score', [True, False], default=False)
+
+        param_space['n_estimators'] = param.NumericalParameter('n_estimators', prior=param.Uniform(lower=2, upper=20), default=10, discretize=True)
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class GradientBoostingClassifier(BaseClassifier):
     """Gradient boosting classifier."""
@@ -1591,13 +1933,14 @@ class GradientBoostingClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Gradient boosting classifier.
         """
-        del parameters['max_features_use_preset']
-        if 'max_features_preset' in parameters:
-            parameters['max_features'] = parameters['max_features_preset']
-            del parameters['max_features_preset']
-        else:
-            parameters['max_features'] = parameters['max_features_sample']
-            del parameters['max_features_sample']
+        if 'max_features_use_preset' in parameters:
+            del parameters['max_features_use_preset']
+            if 'max_features_preset' in parameters:
+                parameters['max_features'] = parameters['max_features_preset']
+                del parameters['max_features_preset']
+            else:
+                parameters['max_features'] = parameters['max_features_sample']
+                del parameters['max_features_sample']
         classifier = SKGradientBoostingClassifier(**parameters)
         return classifier
 
@@ -1751,6 +2094,36 @@ class GradientBoostingClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['GradientBoostingClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['loss'] = param.CategoricalParameter('loss', ['deviance'], default='deviance')
+        param_space['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', [True, False], default=False)
+        param_max_features_preset = param.CategoricalParameter('max_features_preset', ['sqrt', 'log2', None], default=None)
+        param_space['max_features_use_preset'].categories[True]['max_features_preset'] = param_max_features_preset
+        param_max_features_sample = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
+        param_space['max_features_use_preset'].categories[False]['max_features_sample'] = param_max_features_sample
+
+        param_space['learning_rate'] = param.NumericalParameter('learning_rate', prior=param.Uniform(lower=0.0, upper=1.0), default=0.1)
+        param_space['n_estimators'] = param.NumericalParameter('n_estimators', prior=param.Uniform(lower=2, upper=20), default=10, discretize=True)
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class GaussianProcessClassifier(BaseClassifier):
     """Gaussian Process classifier."""
@@ -1761,15 +2134,16 @@ class GaussianProcessClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Gaussian process classifier.
         """
-        if not parameters['estimate_ml']:
-            #del parameters['thetaL']
-            #del parameters['thetaU']
-            parameters['thetaL'] = None
-            parameters['thetaU'] = None
-        else:
-            parameters['thetaL'] = [parameters['thetaL']]
-            parameters['thetaU'] = [parameters['thetaU']]
-        del parameters['estimate_ml']
+        if 'estimate_ml' in parameters:
+            if not parameters['estimate_ml']:
+                #del parameters['thetaL']
+                #del parameters['thetaU']
+                parameters['thetaL'] = None
+                parameters['thetaU'] = None
+            else:
+                parameters['thetaL'] = np.array([parameters['thetaL']])
+                parameters['thetaU'] = np.array([parameters['thetaU']])
+            del parameters['estimate_ml']
         classifier = GaussianProcess(**parameters)
         return classifier
 
@@ -1915,6 +2289,46 @@ class GaussianProcessClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['GaussianProcessClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        # DOES NOT WORLK
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['regr'] = param.CategoricalParameter('regr', ['constant', 'linear', 'quadratic'], default='constant')
+        param_space['corr'] = param.CategoricalParameter('corr', ['absolute_exponential', 'squared_exponential', 'generalized_exponential', 'cubic', 'linear'], default='squared_exponential')
+        param_space['estimate_ml'] = param.CategoricalParameter('estimate_ml', {True: 0.5, False: 0.5}, default=False)
+        param_space['estimate_ml'].categories[True]['thetaU'] = param.NumericalParameter('thetaU', prior=param.Uniform(), default=None, valid_if="params['thetaL'] < value", when_invalid='resample')
+        param_space['estimate_ml'].categories[True]['thetaL'] = param.NumericalParameter('thetaL', prior=param.Uniform(), default=None)
+        param_space['normalize'] = param.CategoricalParameter('normalize', [True, False], default=True)
+        param_space['optimizer'] = param.CategoricalParameter('optimizer', ['fmin_cobyla', 'Welch'], default='fmin_cobyla')
+
+        param_space['theta0'] = param.NumericalParameter('theta0', prior=param.Uniform(), default=0.1)
+        param_space['nugget'] = param.NumericalParameter('nugget', prior=param.Uniform(lower=5 * np.finfo(float).eps, upper=1.0), default=10 * np.finfo(float).eps)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class SVMClassifier(BaseClassifier):
     """Support Vector Machine classifier (libsvm)."""
@@ -1925,7 +2339,8 @@ class SVMClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Support Vector Machine classifier.
         """
-        parameters['kernel'] = str(parameters['kernel'])  # in case numpy.string_ is passed
+        if 'kernel' in parameters:
+            parameters['kernel'] = str(parameters['kernel'])  # in case numpy.string_ is passed
         parameters['probability'] = True  # To enable predict_proba
         classifier = SVC(**parameters)
         return classifier
@@ -2058,6 +2473,40 @@ class SVMClassifier(BaseClassifier):
         param_space['class_weight'] = class_weight_param
         param_space['random_state'] = random_state_param
         return param_space
+
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['SVMClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['kernel'] = param.CategoricalParameter('kernel', ['linear', 'poly', 'rbf', 'sigmoid'], default='rbf')
+        param_degree = param.NumericalParameter('degree', prior=param.Uniform(2, 5), default=3, discretize=True)
+        param_gamma = param.NumericalParameter('gamma', prior=param.Uniform(), default=0.0)
+        param_coef0 = param.NumericalParameter('coef0', prior=param.Uniform(), default=0.0)
+        param_space['kernel'].categories['poly']['degree'] = param_degree
+        param_space['kernel'].categories['poly']['gamma'] = param_gamma
+        param_space['kernel'].categories['poly']['coef0'] = param_coef0
+        param_space['kernel'].categories['rbf']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['coef0'] = param_coef0
+        param_space['shrinking'] = param.CategoricalParameter('shrinking', {True: 0.5, False: 0.5}, default=False)
+        param_space['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+
+        # Numerical parameters
+        param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.001)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
 
 
 class LinearSVMClassifier(BaseClassifier):
@@ -2226,6 +2675,33 @@ class LinearSVMClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['LinearSVMClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['multi_class'] = param.CategoricalParameter('multi_class', ['ovr', 'crammer_singer'], default='ovr')
+        param_space['multi_class'].categories['ovr']['ovr_valid'] = param.CategoricalParameter('ovr_valid', ['l1_l2_False', 'l2_l1_True', 'l2_l2_True', 'l2_l2_False'], default='l2_l2_True')
+        param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', {True: 0.5, False: 0.5}, default=False)
+        param_space['fit_intercept'].categories[True]['intercept_scaling'] = param.NumericalParameter('intercept_scaling', prior=param.LogUniform(-10, 10), default=1.0)
+        param_space['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+
+        # Numerical parameters
+        param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=1.0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.0001)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class NuSVMClassifier(BaseClassifier):
     """Nu-Support Vector Machine classifier."""
@@ -2236,7 +2712,8 @@ class NuSVMClassifier(BaseClassifier):
         :param parameters: parameters to pass to the constructor.
         :returns: Nu-support Vector classifier
         """
-        parameters['kernel'] = str(parameters['kernel'])  # in case numpy.string_ is passed
+        if 'kernel' in parameters:
+            parameters['kernel'] = str(parameters['kernel'])  # in case numpy.string_ is passed
         parameters['probability'] = True  # To enable predict_proba
         classifier = NuSVC(**parameters)
         return classifier
@@ -2351,6 +2828,39 @@ class NuSVMClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['NuSVMClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['kernel'] = param.CategoricalParameter('kernel', ['linear', 'poly', 'rbf', 'sigmoid'], default='rbf')
+        param_degree = param.NumericalParameter('degree', prior=param.Uniform(2, 5), default=3, discretize=True)
+        param_gamma = param.NumericalParameter('gamma', prior=param.Uniform(), default=0.0)
+        param_coef0 = param.NumericalParameter('coef0', prior=param.Uniform(), default=0.0)
+        param_space['kernel'].categories['poly']['degree'] = param_degree
+        param_space['kernel'].categories['poly']['gamma'] = param_gamma
+        param_space['kernel'].categories['poly']['coef0'] = param_coef0
+        param_space['kernel'].categories['rbf']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['coef0'] = param_coef0
+        param_space['shrinking'] = param.CategoricalParameter('shrinking', {True: 0.5, False: 0.5}, default=False)
+
+        # Numerical parameters
+        param_space['nu'] = param.NumericalParameter('nu', prior=param.Uniform(), default=0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.5)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
 
 class LinearDiscriminantClassifier(BaseClassifier):
     """Linear Discriminant classifier."""
@@ -2388,6 +2898,23 @@ class LinearDiscriminantClassifier(BaseClassifier):
         # Create parameter space
         param_space = ParameterSpace()
         return param_space
+
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['LinearDiscriminantClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
 
 
 class QuadraticDiscriminantClassifier(BaseClassifier):
@@ -2440,3 +2967,23 @@ class QuadraticDiscriminantClassifier(BaseClassifier):
         param_space = ParameterSpace()
         param_space['reg_param'] = reg_param
         return param_space
+
+    @classmethod
+    def create_param_space(self, parameters):
+        from ..parameters import param
+        learner_parameters = parameters['Classifiers']['QuadraticDiscriminantClassifier']
+        param_space = param.ParameterSpace.load(learner_parameters)
+        return param_space
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Numerical parameters
+        param_space['reg_param'] = param.NumericalParameter('reg_param', prior=param.Uniform(), default=0.0)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options

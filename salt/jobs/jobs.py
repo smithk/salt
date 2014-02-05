@@ -2,13 +2,14 @@
 The :mod:`salt.jobs.base` module provides classes to manage and dispatch
 asynchronous tasks.
 """
-
 from multiprocessing import Process
 from ..utils.strings import now
 
 
 def run(job):
     from salt.utils.strings import now
+    import sys
+
     try:
         import os
         learner = job.learner(**job.parameters)
@@ -18,7 +19,8 @@ def run(job):
         #print("predicting learner with parameters {0}".format(job.parameters))
         job.prediction = prediction
     except Exception as e:
-        #print("{0} [{1} fold] Exception: {2} {3}".format(now(), job.learner.__name__, e, job.parameters))
+        print("{0} [{1} fold] Exception: {2} {3}".format(now(), job.learner.__name__, e, job.parameters))
+        #sys.stderr.write("{0} [{1} fold] Exception: {2} {3}".format(now(), job.learner.__name__, e, job.parameters))
         # TODO: Report exceptions
         job.exception = e
     except KeyboardInterrupt:
@@ -132,7 +134,7 @@ class JobManager(Process):
                      #'ec2-54-229-212-25.eu-west-1.compute.amazonaws.com')
         ppservers = ('127.0.0.1',)
         # Decide on an appropriate timeout
-        self.cluster = pp.Server(1, ppservers=ppservers, restart=False)
+        self.cluster = pp.Server(0, ppservers=ppservers, restart=False)
         self.jobs = {}
         #print("{n} cpus available".format(n=self.cluster.get_ncpus()))
         try:
@@ -148,7 +150,9 @@ class JobManager(Process):
                     else:
                         message = self.task_queue.get()
                         #self.queues[task_name]
-
+                elif type(message) is int:
+                    print("dying!")  # DOESN'T WORK
+                    self.cluster.destroy()
                 else:
                     # message is request to process a CrossValidationGroup
                     self.load_jobs(message)
@@ -179,6 +183,7 @@ class JobManager(Process):
                     print("{0} [Job Manager] ATTENTION: PROCESSES EXITED PREMATURELY".format(now()))
         if self.console_queue:
             self.console_queue.put("{0} [Job Manager] [ All jobs finished ]\n".format(now()))
+            self.console_queue.put(1)  # TODO: Change end signal
         else:
             print("{0} [Job Manager] [ All jobs finished ]".format(now()))
         print('')
@@ -246,4 +251,3 @@ class JobManager(Process):
     def get_job_id(self):
         self.jobs += 1
         return self.jobs
-

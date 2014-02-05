@@ -18,7 +18,11 @@ from .controls import ToolTip
 from multiprocessing import Queue
 from Queue import Empty as EmptyQueue
 import itertools
+import numpy as np
+from datetime import datetime, timedelta
 from ..options import Settings
+import matplotlib
+import matplotlib.pyplot as plt
 if PY3:
     from tkinter import ttk
 else:
@@ -39,9 +43,12 @@ class SaltMain(ttk.Frame):
         ttk.Frame.__init__(self, master)
         self.pack(fill=tk.BOTH, expand=1)
         self.message_queue = Queue()
+        self.command_queue = Queue()
         self.setup_gui()
+        self.process_state = 'STOPPED'
         #self.message_queue = self.console.queue
         self.update_content()
+        self.update_clock()
 
     def setup_gui(self):
         """Create all user controls."""
@@ -49,21 +56,36 @@ class SaltMain(ttk.Frame):
 
         self.toolbar = ttk.Frame(self)
         self.toolbar.pack(side=tk.TOP, fill=tk.X, padx=2, pady=2)
+        self.statusbar = ttk.Frame(self)
+        self.statusbartext = ttk.Label(self.statusbar, text="[Ready]")
+        self.statusbartext.pack(side=tk.LEFT, fill=tk.X)
+        self.sizeg = ttk.Sizegrip(self.statusbar)
+        self.sizeg.pack(side=tk.RIGHT)
+        self.statusbar.pack(side=tk.BOTTOM, fill=tk.X, padx=2, pady=2)
 
         open_image = tk.PhotoImage(file="{path}/open.gif".format(path=images_path))
-        run_image = tk.PhotoImage(file="{path}/run3.gif".format(path=images_path))
-        self.btn_open = ttk.Button(self.toolbar, text="Do SALT", image=open_image)
+        self.run_image = tk.PhotoImage(file="{path}/gears_run.gif".format(path=images_path))
+        self.pause_image = tk.PhotoImage(file="{path}/gears_pause.gif".format(path=images_path))
+        stop_image = tk.PhotoImage(file="{path}/gears_stop.gif".format(path=images_path))
+        self.btn_open = ttk.Button(self.toolbar, text="Open dataset", image=open_image)
         self.btn_open["command"] = self.show_open_file
         self.btn_open.image = open_image
         self.btn_open.pack(side=tk.LEFT)
         ToolTip(self.btn_open, msg="Select your dataset")
 
-        self.btn_run = ttk.Button(self.toolbar, image=run_image, state=tk.DISABLED)
+        self.btn_run = ttk.Button(self.toolbar, image=self.run_image, state=tk.DISABLED)
         self.btn_run["text"] = "Run"
-        self.btn_run["command"] = self.process_file  # self.quit
-        self.btn_run.image = run_image
+        self.btn_run["command"] = self.run_command  # self.quit
+        self.btn_run.image = self.run_image
         self.btn_run.pack(side=tk.LEFT, padx=5)
         ToolTip(self.btn_run, msg="Start optimization")
+
+        self.btn_stop = ttk.Button(self.toolbar, image=stop_image, state=tk.DISABLED)
+        self.btn_stop["text"] = "Stop"
+        self.btn_stop["command"] = self.stop_processing  # self.quit
+        self.btn_stop.image = stop_image
+        self.btn_stop.pack(side=tk.LEFT)
+        ToolTip(self.btn_stop, msg="Stop optimization")
 
         self.dataset_type = tk.BooleanVar()
         self.dataset_type.set(False)
@@ -121,24 +143,31 @@ class SaltMain(ttk.Frame):
         '''
 
         #test to embed matplotlib
-        import matplotlib
         matplotlib.use('TkAgg')
         from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
         from matplotlib.figure import Figure
+        from matplotlib.font_manager import FontProperties, findSystemFonts, get_fontconfig_fonts
         import numpy as np
 
-        example_figure = Figure(figsize=(5, 4), dpi=100)
-        subplot = example_figure.add_subplot(111)
-        x = np.arange(0.0, 3.0, 0.01)
-        y = np.sin(2 * np.pi * x)
+        self.example_figure = Figure(figsize=(5, 4), dpi=100)
+        self.subplot = self.example_figure.add_subplot(111)
+        #self.subplot.set_xlim([-0.5, 5.5])
+        self.subplot.set_autoscalex_on(True)
+        self.subplot.set_ylim([0, 1])
+        plt.setp(self.subplot.get_yticklabels(), rotation='vertical', fontsize='small')
+        self.summary_plot = None
+        #self.summary_plot = self.subplot.bar(np.arange(5), np.zeros(5), color='rgbcmyk')
+        #x = np.arange(0.0, 3.0, 0.01)
+        #y = np.sin(2 * np.pi * x)
 
-        subplot.plot(x, y)
-        subplot.set_title('Tk embedding example')
-        subplot.set_xlabel('X label')
-        subplot.set_ylabel('Y label')
+        #self.subplot.plot(x, y)
+
+        #self.subplot.set_title('Learner performance comparison', fontproperties=font0)
+        #self.subplot.set_xlabel('Learner')
+        self.subplot.set_ylabel('Score')
 
         self.plot_frame = ttk.Frame(self)
-        self.plot = FigureCanvasTkAgg(example_figure, master=self.plot_frame)
+        self.plot = FigureCanvasTkAgg(self.example_figure, master=self.plot_frame)
         self.plot.show()
         self.plot.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=1)
         self.plot._tkcanvas.pack(fill=tk.BOTH, expand=1)
@@ -214,8 +243,72 @@ class SaltMain(ttk.Frame):
                                              parameters=result.parameters))
 
     def create_parameter_space(self, learners, settings, optimizer):
-        parameter_dict = {learner.__name__: learner.create_parameter_space(settings, optimizer) for learner in learners}
+        parameter_dict = {learner.__name__: learner.create_param_space(settings) for learner in learners}
         return parameter_dict
+
+    def stop_processing(self):
+        self.command_queue.put("STOP")
+        self.process_state = 'STOPPED'
+        self.btn_open.configure(state=tk.NORMAL)
+        self.btn_run.configure(image=self.run_image)
+        self.btn_stop.configure(state=tk.DISABLED)
+        #self.update_chart()
+
+    def update_chart(self):
+        """Update the chart with the ranking of the results."""
+        max_values = 10  # TODO parametrize this
+        top_level_children = self.tree_rank.get_children()
+        learner_results = []
+        for learner_branch in top_level_children[1:]:
+            learner_entries = self.tree_rank.get_children(learner_branch)[:max_values]
+            learner_name = self.tree_rank.item(learner_branch)['text'][:-len('Classifier')]
+            learner_scores = np.array([float(self.tree_rank.item(i)['values'][-1]) for i in learner_entries])
+            learner_results.append((learner_name, np.mean(learner_scores), np.std(learner_scores)))
+        names, means, stds = zip(*learner_results)
+        try:
+            #self.subplot.bar(np.arange(len(means)), means, color='rgbkmy')  # , yerr=stds)
+            num_learners = len(means)
+            if self.summary_plot is None or num_learners != len(self.summary_plot.get_children()):
+                self.summary_plot = None
+                #self.subplot.cla()
+                #if self.summary_plot is not None:
+                self.subplot.cla()
+                #self.subplot.set_title('Learner performance comparison')
+                #self.subplot.set_xlabel('Learner')
+                self.subplot.set_ylabel('Score')
+                self.subplot.set_ylim([0, 1])
+                self.subplot.set_autoscalex_on(True)
+                self.plot.draw()
+                self.summary_plot = self.subplot.bar(np.arange(num_learners), means, color='rgbcmyk', width=0.6)
+                self.subplot.set_xticks(np.arange(num_learners) + 0.3)
+                self.subplot.set_xticklabels(names, size=7)
+                plt.setp(self.subplot.get_yticklabels(), fontsize='small')
+                self.example_figure.autofmt_xdate()
+            else:
+                for i in range(len(means)):
+                    self.summary_plot[i].set_height(means[i])
+            #self.subplot
+            self.plot.draw()
+        except Exception as www:
+            print(www)
+
+    def run_command(self):
+        if self.process_state == 'STOPPED':
+            self.process_file()
+            self.process_state = 'RUNNING'
+            self.btn_stop.configure(state=tk.NORMAL)
+            self.btn_open.configure(state=tk.DISABLED)
+            self.btn_run.configure(image=self.pause_image)
+        elif self.process_state == 'RUNNING':  # Pause
+            self.command_queue.put("PAUSE")
+            self.process_state = 'PAUSED'
+            self.btn_run.configure(image=self.run_image)
+        else:  # Resume
+            self.command_queue.put("START")
+            self.process_state = 'RUNNING'
+            self.btn_stop.configure(state=tk.NORMAL)
+            self.btn_open.configure(state=tk.DISABLED)
+            self.btn_run.configure(image=self.pause_image)
 
     def process_file(self):
         self.reset_tree()
@@ -234,13 +327,13 @@ class SaltMain(ttk.Frame):
         regressor_settings = settings.get('Regressors')
         default_classifiers = None
         default_regressors = None
-        optimizer = 'KDEOptimizer'
+        optimizer = 'ShrinkingHypercubeOptimizer'
         if classifier_settings:
             default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
-                                   if classifier_settings[key][optimizer].get('enabled', False)]
+                                   if classifier_settings[key].get('enabled', False) in ('True', '$True')]
         if regressor_settings:
             default_regressors = [AVAILABLE_REGRESSORS[key] for key in regressor_settings
-                                  if regressor_settings[key][optimizer].get('enabled', False)]
+                                  if regressor_settings[key].get('enabled', False)]
         #import sys
         # sys.exit(0)
         learners = default_regressors if dataset.is_regression else default_classifiers
@@ -258,8 +351,12 @@ class SaltMain(ttk.Frame):
         #parameters = self.create_default_parameters(learners)
         parameter_space = self.create_parameter_space(learners, settings, optimizer)
 
+        timeout = settings['Global'].as_int('timeout')
+        self.finish_at = datetime.now() + timedelta(minutes=timeout)
+
         suggestion_task_manager = SuggestionTaskManager(dataset, learners, parameter_space, metrics,
-                                                        time=settings['Global'].as_int('timeout'), report_exit_caller=self.report_results, console_queue=self.message_queue)
+                                                        time=timeout, report_exit_caller=self.report_results, console_queue=self.message_queue, command_queue=self.command_queue)
+        self.summary_plot = None
         suggestion_task_manager.run_tasks(wait=False)
 
     def reset_tree(self):
@@ -280,7 +377,15 @@ class SaltMain(ttk.Frame):
     '''
     def add_result(self, eval_result, top_n=5):
         if eval_result.learner not in self.learner_ranks:
-            self.learner_ranks[eval_result.learner] = self.tree_rank.insert('', tk.END, text=eval_result.learner)
+            i = 0
+            for node in self.tree_rank.get_children():
+                if i != 0 and self.tree_rank.item(node)['text'] > eval_result.learner:
+                    break
+                i += 1
+            #self.learner_ranks[eval_result.learner] = self.tree_rank.insert('', tk.END, text=eval_result.learner)
+            if i == 0:
+                i = 1
+            self.learner_ranks[eval_result.learner] = self.tree_rank.insert('', i, text=eval_result.learner)
         learner_node = self.learner_ranks[eval_result.learner]
         learner_results = self.tree_rank.get_children(learner_node)
         i = 0
@@ -294,7 +399,7 @@ class SaltMain(ttk.Frame):
                 break
             i += 1
         if i < top_n or True:
-           inserted_result = self.tree_rank.insert(learner_node, i, text=eval_result.learner, values=(eval_result.parameters, eval_result.metrics.score))
+            inserted_result = self.tree_rank.insert(learner_node, i, text=eval_result.learner, values=(eval_result.parameters, eval_result.metrics.score))
         global_results = self.tree_rank.get_children(self.tree_global_rank)
         i = 0
         for result in global_results:
@@ -317,10 +422,15 @@ class SaltMain(ttk.Frame):
                         self.console.insert(ttk.Tkinter.END, message)
                     elif type(message) is EvaluationResults:
                         self.add_result(message)
+                        if self.process_state == 'STOPPED':
+                            self.update_chart()
                         #self.tree_rank.insert(self.tree_global_rank, tk.END, text=message.learner, values=(message.parameters, message.metrics.score))
                         #if message.learner not in self.learner_ranks:
                         #    self.learner_ranks[message.learner] = self.tree_rank.insert('', tk.END, text=message.learner)
                         #self.tree_rank.insert(self.learner_ranks[message.learner], tk.END, text=message.learner, values=(message.parameters, message.metrics.score))
+                    elif type(message) is int:
+                        if message == 1:
+                            self.stop_processing()
                     elif type(message) is dict:
                         pass
                         #self.update_tree(message)
@@ -333,6 +443,18 @@ class SaltMain(ttk.Frame):
         except EmptyQueue:
             pass
         self.after(100, self.update_content)
+
+    def update_clock(self):
+        try:
+            if self.process_state == 'RUNNING':
+                timediff = self.finish_at - datetime.now()
+                if timediff.total_seconds() >= 0:
+                    timetext = "{0:02d}:{1:02d}:{2:02d}".format(timediff.seconds/3600, timediff.seconds/60, timediff.seconds%60)
+                    self.statusbartext.config(text=timetext)
+                self.update_chart()
+        except:
+            pass
+        self.after(1000, self.update_clock)
 
     def show(self):
         """Display the main window."""

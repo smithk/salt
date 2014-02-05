@@ -112,14 +112,14 @@ class RegressionMetrics(BaseMetrics):
 
 
 class ClassificationMetrics(BaseMetrics):
-    def __init__(self, expected, predicted, classes, standarize=True, baseline=None):
+    def __init__(self, expected=None, predicted=None, classes=None, standarize=True, baseline=None):
         self._classes = classes
-        self._expected = expected.astype(int)
+        self._expected = None if expected is None else expected.astype(int)
         self.standarize = standarize
         self.baseline = baseline
         #self.predicted = proba_to_array(predicted)
         self._predicted = predicted
-        self._predicted_class = proba_to_array(predicted)
+        self._predicted_class = None if predicted is None else proba_to_array(predicted)
 
         self.weights = {
             'accuracy': 1.0,
@@ -143,7 +143,7 @@ class ClassificationMetrics(BaseMetrics):
         self._pr_auc = None
         self._matthews_corrcoef = None
         self._custom_confusion_accuracy = None
-        self._custom_confusion_mask = np.eye(len(np.unique(self._expected)))
+        self._custom_confusion_mask = None if self._expected is None else np.eye(len(np.unique(self._expected)))
 
         self._mean_abs_error = None
         self._mean_sq_error = None
@@ -155,8 +155,8 @@ class ClassificationMetrics(BaseMetrics):
 
         self._score = None
 
-        self._class_weights = np.bincount(self._expected.astype(int),
-                                          minlength=len(self._classes)) / (1.0 * len(self._expected))
+        self._class_weights = None if self._classes is None else np.bincount(self._expected.astype(int),
+                                                                             minlength=len(self._classes)) / (1.0 * len(self._expected))
 
     def __str__(self):
         return "Metrics:\nAccuracy: {0}\nFScore: {1}\nMatthews CC: {2}\nroc_auc: {3}\npr_auc: {4}\nmean_abs_err: {5}\nmean_sq_err: {6}\nr2: {7}\nSCORE:{8}".format(
@@ -320,14 +320,17 @@ class ClassificationMetrics(BaseMetrics):
 
     def _get_score(self):
         if self._score is None:
-            # TODO: Create class to standarize and weight metrics.
-            self._score = (self.accuracy * self.weights['accuracy'] +
-                           self.fscore * self.weights['fscore'] +
-                           self.roc_auc * self.weights['roc_auc'] +
-                           self.pr_auc * self.weights['pr_auc'] +
-                           self.matthews * self.weights['matthews'] +
-                           self.mean_abs_error * self.weights['mean_abs_err'] +
-                           self.mean_sq_error * self.weights['mean_sq_err'] +
-                           self.r2_score * self.weights['r2']) / sum(self.weights.values())
+            if self._predicted is None:
+                self._score = 0
+            else:
+                # TODO: Create class to standarize and weight metrics.
+                self._score = (self.accuracy * self.weights['accuracy'] +
+                               self.fscore * self.weights['fscore'] +
+                               self.roc_auc * self.weights['roc_auc'] +
+                               self.pr_auc * self.weights['pr_auc'] +
+                               self.matthews * self.weights['matthews'] +
+                               self.mean_abs_error * self.weights['mean_abs_err'] +
+                               self.mean_sq_error * self.weights['mean_sq_err'] +
+                               self.r2_score * self.weights['r2']) / sum(self.weights.values())
 
         return self._score

@@ -50,7 +50,7 @@ def create_default_parameters(learners):
 
 def create_parameter_space(learners, settings, optimizer):
     print([type(learner) for learner in learners])
-    parameter_dict = {learner.__name__: learner.create_parameter_space(settings, optimizer) for learner in learners}
+    parameter_dict = {learner.__name__: learner.create_param_space(settings, optimizer) for learner in learners}
     return parameter_dict
 
 
