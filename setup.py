@@ -1,5 +1,8 @@
 from setuptools import setup
+from os import listdir
+from os.path import isfile, join
 
+imagedir = 'salt/gui/images/'
 setup(name='salt-ml',
       version='0.1dev',
       description='Toolbox to suggest a machine learning technique and options best suited to a particular data set.',
@@ -11,7 +14,7 @@ setup(name='salt-ml',
       packages=['salt', 'salt.data', 'salt.evaluate', 'salt.gui', 'salt.IO', 'salt.jobs',
                 'salt.learn', 'salt.optimize', 'salt.options', 'salt.parameters', 'salt.sample',
                 'salt.suggest', 'salt.utils'],
-      data_files=[('salt/gui/images', ['salt/gui/images/*.gif']), ],
+      data_files=[(imagedir, [imagedir + filename for filename in listdir(imagedir) if isfile(join(imagedir, filename))]), ],
       platforms='any',
       zip_safe=False,
       entry_points="""
