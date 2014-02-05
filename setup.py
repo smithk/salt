@@ -11,7 +11,7 @@ setup(name='salt-ml',
       packages=['salt', 'salt.data', 'salt.evaluate', 'salt.gui', 'salt.IO', 'salt.jobs',
                 'salt.learn', 'salt.optimize', 'salt.options', 'salt.parameters', 'salt.sample',
                 'salt.suggest', 'salt.utils'],
-      data_files=[('salt/gui/images', ['salt/gui/images/open.gif']), ],
+      data_files=[('salt/gui/images', ['salt/gui/images/*.gif']), ],
       platforms='any',
       zip_safe=False,
       entry_points="""
