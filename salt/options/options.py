@@ -46,7 +46,9 @@ class Settings(object):
         config['Global'] = {'timeout': 3,
                             'randomstate': 283,
                             'maxprocesses': 10,
-                            'hosts': ['127.0.0.1', '10.0.0.1']}
+                            'localcores': 0,
+                            'nodes': ['127.0.0.1'],
+                            'crossvalidation': '2x15'}
 
         log_reg_classif_options = classifiers.LogisticRegressionClassifier.get_default_cfg()
         sgd_classif_options = classifiers.SGDClassifier.get_default_cfg()
@@ -81,7 +83,9 @@ class Settings(object):
         classifier_options['RandomForestClassifier'] = random_forest_classif_options
         classifier_options['ExtraTreesClassifier'] = extra_trees_classif_options
         classifier_options['GradientBoostingClassifier'] = grad_boost_classif_options
+        '''
         classifier_options['GaussianProcessClassifier'] = gaussian_proc_classif_options
+        '''
         classifier_options['SVMClassifier'] = svm_classif_options
         classifier_options['LinearSVMClassifier'] = linearsvm_classif_options
         classifier_options['NuSVMClassifier'] = nu_svm_classif_options

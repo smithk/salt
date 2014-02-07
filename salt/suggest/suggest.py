@@ -118,7 +118,6 @@ class SuggestionTask(Process):
                     #print('! tasks running: {0}'.format(tasks_running))
                 # Report completion to job manager
                 #configuration = None
-                import time
                 #time.sleep(10)
         except KeyboardInterrupt:
             print("Failing gracefully")
@@ -154,6 +153,10 @@ class SuggestionTask(Process):
                 metrics = RegressionMetrics(self.manager.dataset.get_target(), job.labels, baseline=self.manager.baseline_metrics)
             else:
                 try:
+                    for fold in range(len(job.fold_labels)):
+                        _score = ClassificationMetrics(self.manager.dataset.get_target(fold), job.fold_labels[fold], job.dataset['target_names'], baseline=self.manager.baseline_metrics).score
+                        with open('/tmp/all_results.csv', 'a') as output_file:
+                            output_file.write("{0}, {1}, {2}, {3}, {4}\n".format(_score, hash(str(job.learner.__name__)), str(job.learner.__name__), hash(str(job.parameters)), job.parameters))
                     metrics = ClassificationMetrics(self.manager.dataset.get_target(), job.labels, job.dataset['target_names'], baseline=self.manager.baseline_metrics)
                 except ValueError:
                     print("NO ERRORS SHOULD HAPPEN HERE! PLEASE CHECK THIS CODE AGAIN")
@@ -172,7 +175,7 @@ class SuggestionTask(Process):
 
 
 class SuggestionTaskManager():
-    def __init__(self, dataset, learners, parameters, metrics, time, report_exit_caller, console_queue=None, command_queue=None):
+    def __init__(self, dataset, learners, parameters, metrics, time, report_exit_caller, console_queue=None, command_queue=None, local_cores=0, node_list=None):
         self.dataset = dataset
         self.metrics = metrics
         self.console_queue = console_queue
@@ -194,7 +197,7 @@ class SuggestionTaskManager():
                                                 self.task_queue, self.queues[learner.__name__], self.lock, self.console_queue, finish_at, 2,
                                                 self.command_queues[learner.__name__])
                                  for learner in learners}
-        self.job_manager = JobManager(self.task_queue, self.queues, self.lock, self.finished, self.console_queue)
+        self.job_manager = JobManager(self.task_queue, self.queues, self.lock, self.finished, self.console_queue, local_cores, node_list)
 
     def get_baseline_metrics(self, baseline_classifier=BaselineClassifier):
         import numpy as np
@@ -211,9 +214,9 @@ class SuggestionTaskManager():
         else:
             prediction = np.hstack(prediction)
         if self.dataset.is_regression:
-            baseline_metrics = RegressionMetrics(self.dataset.get_target(), prediction, standarize=False)
+            baseline_metrics = RegressionMetrics(self.dataset.get_target(), prediction, standardize=False)
         else:
-            baseline_metrics = ClassificationMetrics(self.dataset.get_target(), prediction, self.dataset.target_names, standarize=False)
+            baseline_metrics = ClassificationMetrics(self.dataset.get_target(), prediction, self.dataset.target_names, standardize=False)
         return baseline_metrics
 
     def all_tasks_finished(self):
@@ -244,6 +247,10 @@ class SuggestionTaskManager():
             command_dispatcher.join()
             # job_manager only joins after all tasks have finished
             self.job_manager.join()
+            a = [(result.learner, result.parameters.values(), result.metrics.score) for result in self.optimizer.evaluation_results]
+            with open('/tmp/all_results.txt', 'w') as f:
+                for i in a:
+                    f.write("{0}, {1}, {2}\n".format(*i))
             self.report_exit_caller(self.ranking)
 
     def close_finished_task(self, task):

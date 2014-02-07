@@ -166,10 +166,10 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
     def get_next_configuration(self):
         if len(self.hypercubes) > 0 and all(value <= self.hypercube_threshold for hypercube in self.hypercubes.values() for value in hypercube.values()):
             next_configuration = None
-            a = [(result.parameters.values()[0], result.metrics.score) for result in self.evaluation_results]
+            a = [(result.learner, result.parameters.values(), result.metrics.score) for result in self.evaluation_results]
             with open('/tmp/results.txt', 'w') as f:
                 for i in a:
-                    f.write("{0}\n".format(i))
+                    f.write("{0}, {1}, {2}\n".format(*i))
         else:
             #print([value for hypercube in self.hypercubes.values() for value in hypercube.values()])
             next_configuration = self.param_space.sample_configuration()

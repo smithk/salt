@@ -19,6 +19,7 @@ from multiprocessing import Queue
 from Queue import Empty as EmptyQueue
 import itertools
 import numpy as np
+import re
 from datetime import datetime, timedelta
 from ..options import Settings
 import matplotlib
@@ -49,6 +50,7 @@ class SaltMain(ttk.Frame):
         #self.message_queue = self.console.queue
         self.update_content()
         self.update_clock()
+        self.all_results = []
 
     def setup_gui(self):
         """Create all user controls."""
@@ -209,12 +211,13 @@ class SaltMain(ttk.Frame):
             #print("open file {thefile}".format(thefile=self.file_to_open))
             self.message_queue.put("open file {thefile}\n".format(thefile=self.file_to_open))
 
-    def load_dataset(self, is_regression):
+    def load_dataset(self, is_regression, hold_out=0.3):
         if self.file_to_open:
             arff_reader = ArffReader(self.file_to_open)
             dataset = arff_reader.read_file(is_regression)
+            train_set, test_set = dataset.split(1 - hold_out, create_obj=True)
 
-            return dataset
+            return train_set, test_set
 
     def create_default_parameters(self, learners):
         parameter_dict = {learner.__name__: learner.create_default_params() for learner in learners}
@@ -252,7 +255,16 @@ class SaltMain(ttk.Frame):
         self.btn_open.configure(state=tk.NORMAL)
         self.btn_run.configure(image=self.run_image)
         self.btn_stop.configure(state=tk.DISABLED)
+        self.output_results()
         #self.update_chart()
+
+    def output_results(self):
+        pass
+        '''
+        with open('/tmp/all_results.csv', 'w') as output_file:
+            for result in self.all_results:
+                output_file.write("{0}, {1}, {2}\n".format(result.metrics.score, hash(str(result.learner)), hash(str(result.parameters))))
+        '''
 
     def update_chart(self):
         """Update the chart with the ranking of the results."""
@@ -315,12 +327,20 @@ class SaltMain(ttk.Frame):
         Log.write("Running [SALT] in gui mode with options\n{options}".format(options=format_dict(self.options)))
 
         # === Dataset ===
-        dataset = self.load_dataset(self.dataset_type.get())
-        if not dataset:
+        train_set, hold_out_set = self.load_dataset(self.dataset_type.get())
+        print("Training with {0} points, {1} points held-out".format(len(train_set.data), len(hold_out_set.data)))
+        if train_set is None:
             return  # break?
-        dataset.initialize()
 
         settings = self.load_settings(None)
+
+        #settings['Global'].get('crossvalidation','10')
+        #xval_parser = re.match("(?P<>.+)", nodes)
+        xval_folds = 10
+        xval_rep = 2
+
+
+        train_set.initialize(xval_folds)
 
         # === Learners ===
         classifier_settings = settings.get('Classifiers')
@@ -336,7 +356,7 @@ class SaltMain(ttk.Frame):
                                   if regressor_settings[key].get('enabled', False)]
         #import sys
         # sys.exit(0)
-        learners = default_regressors if dataset.is_regression else default_classifiers
+        learners = default_regressors if train_set.is_regression else default_classifiers
         # for testing:
         #learners = DEFAULT_REGRESSORS if dataset.is_regression else DEFAULT_CLASSIFIERS
         if not learners or len(learners) == 0:
@@ -348,14 +368,31 @@ class SaltMain(ttk.Frame):
             print("No metrics")
             return  # break?
 
-        #parameters = self.create_default_parameters(learners)
+        # === Cluster ===
+        local_cores = settings['Global'].as_int('localcores')
+        nodes = settings['Global'].get('nodes', ['localhost'])
+        if type(nodes) is not list:
+            assert(type(nodes) is str)
+            parsed = re.match("read\((?P<filename>.+)\)", nodes)
+            if parsed is None:
+                nodes = [nodes]
+            else:
+                filename = parsed.groupdict().get('filename')
+                if filename is not None:
+                    with open(filename) as nodefile:
+                        nodes = [node[:-1] for node in nodefile.readlines()]
+
         parameter_space = self.create_parameter_space(learners, settings, optimizer)
 
         timeout = settings['Global'].as_int('timeout')
         self.finish_at = datetime.now() + timedelta(minutes=timeout)
 
-        suggestion_task_manager = SuggestionTaskManager(dataset, learners, parameter_space, metrics,
-                                                        time=timeout, report_exit_caller=self.report_results, console_queue=self.message_queue, command_queue=self.command_queue)
+        suggestion_task_manager = SuggestionTaskManager(train_set, learners, parameter_space, metrics,
+                                                        time=timeout, report_exit_caller=self.report_results,
+                                                        console_queue=self.message_queue,
+                                                        command_queue=self.command_queue,
+                                                        local_cores=local_cores,
+                                                        node_list=nodes)
         self.summary_plot = None
         suggestion_task_manager.run_tasks(wait=False)
 
@@ -408,6 +445,7 @@ class SaltMain(ttk.Frame):
                 break
             i += 1
         self.tree_rank.insert(self.tree_global_rank, i, text=eval_result.learner, values=(eval_result.parameters, eval_result.metrics.score))
+        self.all_results.append(eval_result)
 
     def update_content(self):
         try:

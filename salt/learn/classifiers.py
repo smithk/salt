@@ -534,7 +534,9 @@ class PassiveAggressiveClassifier(BaseClassifier):
 
         # Numerical parameters
         param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=1.0)
-        param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=0.0, stdev=1.0), default=1, discretize=True)
+        param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=0.0, stdev=1.0),
+                                                         default=1, discretize=True,
+                                                         valid_if="value > 0", when_invalid='resample')
 
         # return learner_options
         learner_options = param_space.dump()
@@ -2144,6 +2146,17 @@ class GaussianProcessClassifier(BaseClassifier):
                 parameters['thetaL'] = np.array([parameters['thetaL']])
                 parameters['thetaU'] = np.array([parameters['thetaU']])
             del parameters['estimate_ml']
+        # p parameter needed for correlation = 'generalized_exponential'
+        '''
+        if 'p' in parameters:
+            parameters['theta0'] = np.array([parameters['theta0'], parameters['p']])
+            print(parameters['theta0'])
+            if 'thetaL' in parameters:
+                parameters['thetaL'] = np.array([parameters['thetaL'], parameters['p']])
+            if 'thetaU' in parameters:
+                parameters['thetaU'] = np.array([parameters['thetaU'], parameters['p']])
+            del parameters['p']
+        '''
         classifier = GaussianProcess(**parameters)
         return classifier
 
@@ -2313,8 +2326,13 @@ class GaussianProcessClassifier(BaseClassifier):
         from ..parameters import param
         param_space = param.ParameterSpace()
 
-        param_space['regr'] = param.CategoricalParameter('regr', ['constant', 'linear', 'quadratic'], default='constant')
-        param_space['corr'] = param.CategoricalParameter('corr', ['absolute_exponential', 'squared_exponential', 'generalized_exponential', 'cubic', 'linear'], default='squared_exponential')
+        param_space['regr'] = param.CategoricalParameter('regr',
+                                                         ['constant', 'linear', 'quadratic'],
+                                                         default='constant')
+        # Generalized exponential correlation misbehaves. Check sklearn code
+        #param_space['corr'] = param.CategoricalParameter('corr', ['absolute_exponential', 'squared_exponential', 'generalized_exponential', 'cubic', 'linear'], default='squared_exponential')
+        param_space['corr'] = param.CategoricalParameter('corr', ['absolute_exponential', 'squared_exponential', 'cubic', 'linear'], default='squared_exponential')
+        #param_space['corr'].categories['generalized_exponential']['p'] = param.NumericalParameter('p', prior=param.LogUniform(-5, 5), default=0)
         param_space['estimate_ml'] = param.CategoricalParameter('estimate_ml', {True: 0.5, False: 0.5}, default=False)
         param_space['estimate_ml'].categories[True]['thetaU'] = param.NumericalParameter('thetaU', prior=param.Uniform(), default=None, valid_if="params['thetaL'] < value", when_invalid='resample')
         param_space['estimate_ml'].categories[True]['thetaL'] = param.NumericalParameter('thetaL', prior=param.Uniform(), default=None)

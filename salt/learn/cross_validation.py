@@ -33,15 +33,19 @@ class CrossValidationGroup(object):
         return fold_list
 
     def _get_labels(self):
-        if self._labels is None:
-            # if fold_labels are coded as static labels instead of
-            # probabilities, use hstack (i.e., if fold_labels are arrays
-            # instead of matrices)
-            if self.fold_labels[0].ndim == 1:
-                self._labels = np.hstack(self.fold_labels)
-            else:
-                self._labels = np.vstack(self.fold_labels)
-        return self._labels
+        try:
+            if self._labels is None:
+                # if fold_labels are coded as static labels instead of
+                # probabilities, use hstack (i.e., if fold_labels are arrays
+                # instead of matrices)
+                if self.fold_labels[0].ndim == 1:
+                    self._labels = np.hstack(self.fold_labels)
+                else:
+                    self._labels = np.vstack(self.fold_labels)
+            return self._labels
+        except Exception as exc:
+            raise exc
+            #print(len(self.fold_labels), [a.shape for a in self.fold_labels])
 
     labels = property(_get_labels)
 

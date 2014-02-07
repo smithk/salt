@@ -22,7 +22,7 @@ class BaseMetrics():
     # ======= Static and comparison methods =======
 
     @staticmethod
-    def standarize_value(worst, best, value):
+    def standardize_value(worst, best, value):
         assert worst != best
         return (1.0 * value - worst) / (1.0 * best - worst)
 
@@ -47,12 +47,12 @@ class BaseMetrics():
 
 
 class RegressionMetrics(BaseMetrics):
-    def __init__(self, expected, predicted, standarize=True, baseline=None):
+    def __init__(self, expected, predicted, standardize=True, baseline=None):
         self._expected = expected
         self._predicted = predicted
 
         self._score = None
-        self.standarize = standarize
+        self.standardize = standardize
         self.baseline = baseline
 
         self._explained_var = None
@@ -76,8 +76,8 @@ class RegressionMetrics(BaseMetrics):
     def _get_mean_abs_err(self):
         if self._mean_abs_error is None:
             computed_error = mean_absolute_error(self._expected, self._predicted)
-            if self.standarize:
-                self._mean_abs_error = BaseMetrics.standarize_value(self.baseline.mean_abs_error, 0, computed_error)
+            if self.standardize:
+                self._mean_abs_error = BaseMetrics.standardize_value(self.baseline.mean_abs_error, 0, computed_error)
             else:
                 self._mean_abs_error = computed_error
         return self._mean_abs_error
@@ -85,8 +85,8 @@ class RegressionMetrics(BaseMetrics):
     def _get_mean_sq_err(self):
         if self._mean_sq_error is None:
             computed_error = mean_squared_error(self._expected, self._predicted)
-            if self.standarize:
-                self._mean_sq_error = BaseMetrics.standarize_value(self.baseline.mean_sq_error, 0, computed_error)
+            if self.standardize:
+                self._mean_sq_error = BaseMetrics.standardize_value(self.baseline.mean_sq_error, 0, computed_error)
             else:
                 self._mean_sq_error = computed_error
         return self._mean_sq_error
@@ -112,10 +112,10 @@ class RegressionMetrics(BaseMetrics):
 
 
 class ClassificationMetrics(BaseMetrics):
-    def __init__(self, expected=None, predicted=None, classes=None, standarize=True, baseline=None):
+    def __init__(self, expected=None, predicted=None, classes=None, standardize=True, baseline=None):
         self._classes = classes
         self._expected = None if expected is None else expected.astype(int)
-        self.standarize = standarize
+        self.standardize = standardize
         self.baseline = baseline
         #self.predicted = proba_to_array(predicted)
         self._predicted = predicted
@@ -186,22 +186,27 @@ class ClassificationMetrics(BaseMetrics):
             # normalize=False => number of correctly classified samples
             # normalize=True => ratio of correctly classified samples (accuracy)
             self._accuracy = accuracy_score(self._expected, self._predicted_class, normalize=True)
-            #sys.exit(0)
+            if self.standardize:
+                self._accuracy = BaseMetrics.standardize_value(self.baseline.accuracy, 1, self._accuracy)
         return self._accuracy
 
     def _get_fscore(self):
         if self._fscore is None:
             # beta=0: precision only; beta=1: precision, recall (same weight); beta=Inf: recall only
+            # default averaging for fbeta_score: weighted
             beta = 1
             self._fscore = fbeta_score(self._expected, self._predicted_class, beta)
+            if self.standardize:
+                self._fscore = BaseMetrics.standardize_value(self.baseline.fscore, 1, self._fscore)
         return self._fscore
 
     def _get_jaccard(self):
         # Do not use. Jaccard is equivalent to accuracy_score for multiclass classification
         if self._jaccard is None:
             jaccard_value = jaccard_similarity_score(self._expected, self._predicted_class)
-            if self.standarize:
-                self._jaccard = BaseMetrics.standarize_value(-1, 1, jaccard_value)
+            if self.standardize:
+                #self._jaccard = BaseMetrics.standardize_value(-1, 1, jaccard_value)
+                self._jaccard = BaseMetrics.standardize_value(self.baseline.jaccard, 1, jaccard_value)
             else:
                 self._jaccard = jaccard_value
         return self._jaccard
@@ -209,11 +214,15 @@ class ClassificationMetrics(BaseMetrics):
     def _get_precision(self):
         if self._precision is None:
             self._precision = precision_score(self._expected, self._predicted_class, average='weighted')
+            if self.standardize:
+                self._precision = BaseMetrics.standardize_value(self.baseline.precision, 1, self._precision)
         return self._precision
 
     def _get_recall(self):
         if self._recall is None:
             self._recall = recall_score(self._expected, self._predicted_class, average='weighted')
+            if self.standardize:
+                self._recall = BaseMetrics.standardize_value(self.baseline.recall, 1, self._recall)
         return self._recall
 
     def _get_roc_auc(self):
@@ -224,6 +233,8 @@ class ClassificationMetrics(BaseMetrics):
                                     for i in np.arange(len(self._class_weights))])
             #self._roc_auc = roc_auc_score(self._expected, self._predicted_class)
             self._roc_auc = weighted_roc_auc
+            if self.standardize:
+                self._roc_auc = BaseMetrics.standardize_value(self.baseline.roc_auc, 1, self._roc_auc)
         return self._roc_auc
 
     def _get_pr_auc(self):
@@ -232,6 +243,8 @@ class ClassificationMetrics(BaseMetrics):
                                    average_precision_score(self._expected == i, self._predicted[:, i])
                                    for i in np.arange(len(self._class_weights))])
             self._pr_auc = weighted_pr_auc
+            if self.standardize:
+                self._pr_auc = BaseMetrics.standardize_value(self.baseline.pr_auc, 1, self._pr_auc)
         return self._pr_auc
 
     def _get_matthews_correlation_coefficient(self):
@@ -242,8 +255,9 @@ class ClassificationMetrics(BaseMetrics):
                                 matthews_corrcoef((self._expected == i).astype(int), (self._predicted_class == i).astype(int))
                                 if self._class_weights[i] > 0 else 0
                                 for i in np.arange(len(self._class_weights))])
-            if self.standarize:
-                self._matthews_corrcoef = BaseMetrics.standarize_value(-1, 1, weighted_mcc)
+            if self.standardize:
+                #self._matthews_corrcoef = BaseMetrics.standardize_value(-1, 1, weighted_mcc)
+                self._matthews_corrcoef = BaseMetrics.standardize_value(self.baseline.matthews, 1, weighted_mcc)
             else:
                 self._matthews_corrcoef = weighted_mcc
         return self._matthews_corrcoef
@@ -257,19 +271,17 @@ class ClassificationMetrics(BaseMetrics):
 
     def _get_mean_abs_error(self):
         if self._mean_abs_error is None:
-            computed_error = mean_absolute_error(self._expected, self._predicted_class)
-            if self.standarize:
-                self._mean_abs_error = BaseMetrics.standarize_value(self.baseline.mean_abs_error, 0, computed_error)
-            else:
-                self._mean_abs_error = computed_error
+            self._mean_abs_error = mean_absolute_error(self._expected, self._predicted_class)
+            if self.standardize:
+                self._mean_abs_error = BaseMetrics.standardize_value(self.baseline.mean_abs_error, 0, self._mean_abs_error)
         return self._mean_abs_error
 
     def _get_mean_sq_error(self):
         if self._mean_sq_error is None:
             # TODO: Compute baseline
             computed_error = mean_squared_error(self._expected, self._predicted_class)
-            if self.standarize:
-                self._mean_sq_error = BaseMetrics.standarize_value(self.baseline.mean_sq_error, 0, computed_error)
+            if self.standardize:
+                self._mean_sq_error = BaseMetrics.standardize_value(self.baseline.mean_sq_error, 0, computed_error)
             else:
                 self._mean_sq_error = computed_error
         return self._mean_sq_error
@@ -278,6 +290,8 @@ class ClassificationMetrics(BaseMetrics):
         if self._r2_score is None:
             # TODO: find out how to use probabilities here
             self._r2_score = sk_r2_score(self._expected, self._predicted_class)
+            if self.standardize:
+                self._r2_score = BaseMetrics.standardize_value(self.baseline.r2_score, 1, self._r2_score)
         return self._r2_score
 
     def _get_confusion_matrix(self):
@@ -323,7 +337,7 @@ class ClassificationMetrics(BaseMetrics):
             if self._predicted is None:
                 self._score = 0
             else:
-                # TODO: Create class to standarize and weight metrics.
+                # TODO: Create class to standardize and weight metrics.
                 self._score = (self.accuracy * self.weights['accuracy'] +
                                self.fscore * self.weights['fscore'] +
                                self.roc_auc * self.weights['roc_auc'] +

@@ -89,7 +89,7 @@ class LearningJobManager(object):
 class JobManager(Process):
     jobs = 0
 
-    def __init__(self, task_queue, queues, lock, finished, console_queue):
+    def __init__(self, task_queue, queues, lock, finished, console_queue, local_cores='autodetect', node_list=('127.0.0.1', )):
         self.job_groups = {}
         self.task_queue = task_queue
         self.console_queue = console_queue
@@ -99,6 +99,8 @@ class JobManager(Process):
         self.cluster = None
         self.jobs = None
         self.finished = finished
+        self.node_list = tuple(node_list)
+        self.local_cores = local_cores if type(local_cores) is int else 'autodetect'
         #self.cluster = pp.Server(1, ppservers=('10.2.172.4', '10.2.164.194',))
         #self.cluster = JobCluster(run2, callback=notify_status, reentrant=True,
         #                          #ip_addr='10.2.172.4',
@@ -110,31 +112,9 @@ class JobManager(Process):
 
     def run(self):
         import pp
-        ppservers = ('10.2.172.4', '10.2.164.194', '54.229.166.39', '*',
-                     'ec2-54-229-215-178.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-181.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-174.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-170.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-159.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-180.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-179.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-84.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-214-225.eu-west-1.compute.amazonaws.com',
-                     'ec2-54-229-215-177.eu-west-1.compute.amazonaws.com')
-
-                     #'ec2-54-229-210-232.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-211-169.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-212-20.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-143-21.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-212-62.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-210-192.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-210-201.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-212-74.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-212-36.eu-west-1.compute.amazonaws.com',
-                     #'ec2-54-229-212-25.eu-west-1.compute.amazonaws.com')
-        ppservers = ('127.0.0.1',)
+        #ppservers = ('127.0.0.1', '54.194.63.145', '54.194.43.166','54.194.251.183','54.194.245.87', '54.194.244.87' )
         # Decide on an appropriate timeout
-        self.cluster = pp.Server(0, ppservers=ppservers, restart=False)
+        self.cluster = pp.Server(self.local_cores, ppservers=self.node_list, restart=False)
         self.jobs = {}
         #print("{n} cpus available".format(n=self.cluster.get_ncpus()))
         try:

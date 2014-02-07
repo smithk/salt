@@ -14,15 +14,14 @@ class Dataset(Bunch):
         self.is_regression = is_regression
         self.folds = None
 
-    def initialize(self):
-        folds = 3
+    def initialize(self, num_folds):
+        folds = num_folds
         self.index_list = self.distribute(folds)
         self.folds = len(self.index_list)
 
-    def split(self, items, shuffle=True):
+    def split(self, items, shuffle=True, create_obj=False):
         """Split a dataset."""
         num_items = self.data.shape[0]
-        print(num_items, "============================")
         indices = np.arange(num_items)
         if shuffle:
             np.random.shuffle(indices)
@@ -31,7 +30,20 @@ class Dataset(Bunch):
         indices_training = indices[:items]
         indices_testing = indices[items:]
 
-        return (self.data[indices_training], self.data[indices_testing])
+        if create_obj:
+            train_set = Dataset(is_regression=self.is_regression)
+            train_set.update()
+            train_set.data = self.data[indices_training]
+            train_set.target = self.target[indices_training]
+            train_set.target_names = self.target_names
+            test_set = Dataset(is_regression=self.is_regression)
+            test_set.update()
+            test_set.data = self.data[indices_testing]
+            test_set.target = self.target[indices_testing]
+            test_set.target_names = self.target_names
+            return train_set, test_set
+        else:
+            return (self.data[indices_training], self.data[indices_testing])
 
     def _get_slice(self, i, num_slices):
         slice_indices = np.rint(np.linspace(0, len(self.data), num_slices + 1)).astype(int)
@@ -57,7 +69,7 @@ class Dataset(Bunch):
         return slice_dataset, the_rest_dataset
 
     def get_fold_data(self, fold):
-        folds = 3
+        folds = self.folds
         if self.index_list is None:
             self.index_list = self.distribute(folds)
 
@@ -74,8 +86,11 @@ class Dataset(Bunch):
 
         return (testing_set, training_set)
 
-    def get_target(self):
-        target_indices = np.hstack(self.index_list)
+    def get_target(self, fold_num=None):
+        if fold_num is None:
+            target_indices = np.hstack(self.index_list)
+        else:
+            target_indices = self.index_list[fold_num]
         return self.target[target_indices]
 
     def distribute(self, folds):
