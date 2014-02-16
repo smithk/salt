@@ -1,6 +1,7 @@
 # from datetime import timedelta
 from configobj import ConfigObj
 import os
+import re
 from ..learn import classifiers
 from collections import OrderedDict
 
@@ -48,7 +49,8 @@ class Settings(object):
                             'maxprocesses': 10,
                             'localcores': 0,
                             'nodes': ['127.0.0.1'],
-                            'crossvalidation': '2x15'}
+                            'crossvalidation': '2x15',
+                            'holdout': 0.3}
 
         log_reg_classif_options = classifiers.LogisticRegressionClassifier.get_default_cfg()
         sgd_classif_options = classifiers.SGDClassifier.get_default_cfg()
@@ -120,3 +122,37 @@ class Settings(object):
             config.filename = 'salt.ini'
             config.write()
         return config
+
+    @classmethod
+    def read_nodes(self, nodedef):
+        nodes = []
+        if type(nodedef) is not list:
+            nodedef = [nodedef]
+        readfile_regex = 'read\((\'(?P<fname1>.+)\'|\"(?P<fname2>.+)\"|(?P<fname3>.+))\)'
+        for node in nodedef:
+            parsed = re.match(readfile_regex, node)
+            if parsed is None:
+                nodes.append(node)
+            else:
+                fname_values = parsed.groupdict()
+                filename = fname_values.get('fname1') or fname_values.get('fname2') or fname_values.get('fname3')
+                try:
+                    if filename is not None:
+                        with open(filename) as nodefile:
+                            nodes.extend([node[:-1] for node in nodefile.readlines() if node[:-1] != ''])
+                except IOError as exc:
+                    print("Hosts file {0}: {1}".format(exc.filename, exc.strerror))
+        return nodes
+
+    @classmethod
+    def get_crossvalidation(self, crossvalidation):
+        """Parses a cross-validation specification.
+        Examples of valid cross-validation specifications:
+            10: 10-fold cross-validation.
+            2x15: 2 repetitions of 15-fold cross-validation.
+        """
+        xval_parser = re.match("((?P<xval_rep>\d+)x)?(?P<xval_folds>\d+)", crossvalidation)
+        xval_values = xval_parser.groupdict()
+        xval_folds = int(xval_values['xval_folds'])
+        xval_rep = int(xval_values['xval_rep'] or 1)
+        return xval_rep, xval_folds

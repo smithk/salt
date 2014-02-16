@@ -125,6 +125,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             best_result = evaluation_results
             self.expand(best_result.parameters)
             self.best_results[str(signature)] = best_result
+            print("new best for {0}: {1}".format(id(self), evaluation_results.metrics.score))
         else:
             self.shrink(best_result.parameters)  # Shrink around same config
         #else:
@@ -166,10 +167,10 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
     def get_next_configuration(self):
         if len(self.hypercubes) > 0 and all(value <= self.hypercube_threshold for hypercube in self.hypercubes.values() for value in hypercube.values()):
             next_configuration = None
-            a = [(result.learner, result.parameters.values(), result.metrics.score) for result in self.evaluation_results]
-            with open('/tmp/results.txt', 'w') as f:
-                for i in a:
-                    f.write("{0}, {1}, {2}\n".format(*i))
+            #a = [(result.learner, result.parameters.values(), result.metrics.score) for result in self.evaluation_results]
+            #with open('/tmp/results.txt', 'w') as f:
+            #    for i in a:
+            #        f.write("{0}, {1}, {2}\n".format(*i))
         else:
             #print([value for hypercube in self.hypercubes.values() for value in hypercube.values()])
             next_configuration = self.param_space.sample_configuration()
@@ -177,6 +178,15 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
 
 
 class DefaultConfigOptimizer(BaseOptimizer):
+    def __init__(self, *args, **kwargs):
+        super(DefaultConfigOptimizer, self).__init__(*args, **kwargs)
+        self.has_run = False
+        pass
+
     def get_next_configuration(self):
-        next_configuration = {}
+        if self.has_run:
+            next_configuration = None
+        else:
+            next_configuration = {}
+            self.has_run = True
         return next_configuration

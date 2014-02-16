@@ -80,9 +80,14 @@ class BaseClassifier(BaseLearner):
         # extended_prediction includes columns for non-observed classes
         extended_prediction = np.zeros((len(dataset.data), len(dataset.target_names)))
         prediction_index = 0
-        for i in np.unique(self.training_classes):
-            extended_prediction[:, i] = prediction[:, prediction_index]
-            prediction_index += 1
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            for i in np.unique(self.training_classes):
+                # TODO fix: Next line throws warning DeprecationWarning: using a
+                # non-integer number instead of an integer
+                # will result in an error in the future
+                extended_prediction[:, i] = prediction[:, prediction_index]
+                prediction_index += 1
         return extended_prediction
 
     def get_learner_parameters(self, parameters):

@@ -89,6 +89,8 @@ class Uniform(Distribution):
         return value
         '''
         if discretize is True:
+            """
+            # Already implemented in numpy
             try:
                 lower = np.ceil(float(self.lower)) - 0.5
             except TypeError:
@@ -96,6 +98,8 @@ class Uniform(Distribution):
             upper = np.floor(float(self.upper)) + 0.5
             value = np.random.uniform(lower, upper, size=None)
             value = int(np.round(value))
+            """
+            value = np.random.random_integers(self.lower, self.upper)
         else:
             value = np.random.uniform(self.lower, self.upper, size=None)
             value = float(value)

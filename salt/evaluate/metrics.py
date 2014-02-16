@@ -11,6 +11,7 @@ from sklearn.metrics import (accuracy_score, fbeta_score, jaccard_similarity_sco
                              mean_absolute_error, mean_squared_error, r2_score as sk_r2_score,
                              explained_variance_score)
 from ..utils.arrays import proba_to_array, get_custom_confusion_matrix
+import warnings
 
 
 class BaseMetrics():
@@ -123,9 +124,9 @@ class ClassificationMetrics(BaseMetrics):
 
         self.weights = {
             'accuracy': 1.0,
-            'fscore': 0.0,
-            'matthews': 0.0,
-            'roc_auc': 0.0,
+            'fscore': 1.0,
+            'matthews': 1.0,
+            'roc_auc': 1.0,
             'pr_auc': 0.0,
             'mean_abs_err': 0.0,
             'mean_sq_err': 0.0,
@@ -338,13 +339,15 @@ class ClassificationMetrics(BaseMetrics):
                 self._score = 0
             else:
                 # TODO: Create class to standardize and weight metrics.
-                self._score = (self.accuracy * self.weights['accuracy'] +
-                               self.fscore * self.weights['fscore'] +
-                               self.roc_auc * self.weights['roc_auc'] +
-                               self.pr_auc * self.weights['pr_auc'] +
-                               self.matthews * self.weights['matthews'] +
-                               self.mean_abs_error * self.weights['mean_abs_err'] +
-                               self.mean_sq_error * self.weights['mean_sq_err'] +
-                               self.r2_score * self.weights['r2']) / sum(self.weights.values())
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    self._score = (self.accuracy * self.weights['accuracy'] +
+                                   self.fscore * self.weights['fscore'] +
+                                   self.roc_auc * self.weights['roc_auc'] +
+                                   self.pr_auc * self.weights['pr_auc'] +
+                                   self.matthews * self.weights['matthews'] +
+                                   self.mean_abs_error * self.weights['mean_abs_err'] +
+                                   self.mean_sq_error * self.weights['mean_sq_err'] +
+                                   self.r2_score * self.weights['r2']) / sum(self.weights.values())
 
         return self._score

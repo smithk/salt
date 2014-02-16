@@ -14,6 +14,7 @@ from ..evaluate import EvaluationResults
 from ..utils.strings import now
 from datetime import datetime, timedelta
 import sys
+import numpy as np
 
 
 class CommandDispatcher(Process):
@@ -43,8 +44,8 @@ class SuggestionTask(Process):
         self.parameters = parameters
         #self.optimizer = SequentialOptimizer(self.parameters)
         #self.optimizer = KDEOptimizer(self.parameters)
-        self.optimizer = ShrinkingHypercubeOptimizer(self.parameters)
-        #self.optimizer = DefaultConfigOptimizer(self.parameters)
+        #self.optimizers = [ShrinkingHypercubeOptimizer(self.parameters) for i in range(5)]
+        self.optimizers = [DefaultConfigOptimizer(self.parameters)]
         self.task_queue = task_queue
         self.result_queue = result_queue
         self.lock = lock
@@ -69,63 +70,63 @@ class SuggestionTask(Process):
     timeout = property(_is_timeout)
 
     def run(self):
-        configuration = self.optimizer.get_next_configuration()
-        tasks_running = 0
+        configurations = [optimizer.get_next_configuration() for optimizer in self.optimizers]
+        tasks_running = [0] * len(configurations)
         try:
-            while configuration is not None:  # and not self.timeout:
-                #self.finish_at = datetime.now()  # One run only (for testing)
-                # TODO: Read cross-validation folds from settings.
-                cross_val_group = CrossValidationGroup(self.learner, configuration,
-                                                       self.manager.dataset)
-                self.lock.acquire()
-                try:
-                    self.task_queue.put(cross_val_group)
-                    tasks_running += 1
-                    #print('tasks running: {0} {1}'.format(tasks_running, configuration))
-                except Exception as e:
-                    if self.console_queue:
-                        self.console_queue.put("{0} Exception: {1}\n".format(now(), e))
-                    else:
-                        sys.stderr.write("{0} Exception: {1}".format(now(), e))
-                        #print("{0} Exception: {1}".format(now(), e))
-                self.lock.release()
-                configuration = self.optimizer.get_next_configuration()
-                if not self.result_queue.empty() or tasks_running >= self.max_tasks:
+            while not all(configuration is None for configuration in configurations):
+                for i, optimizer in enumerate(self.optimizers):
+                    if tasks_running[i] >= self.max_tasks - 1:
+                        import time
+                        time.sleep(0.5)  # hack; otherwise the gui freezes
+                    configuration = configurations[i]
+                    if configuration is None:
+                        continue
+                    cross_val_groups = [CrossValidationGroup(self.learner, configuration,
+                                                             self.manager.dataset, repetition,
+                                                             optimizer_id=i)
+                                        for repetition in xrange(self.manager.dataset.repetitions)]
+                    self.lock.acquire()
                     try:
-                        job_results = self.result_queue.get(timeout=(self.finish_at - datetime.now()).total_seconds())  # block=tasks_running >= self.max_tasks)
+                        for cross_val_group in cross_val_groups:
+                            self.task_queue.put(cross_val_group)
+                        tasks_running[i] += 1
+                    except Exception as e:
+                        if self.console_queue:
+                            self.console_queue.put("{0} Exception: {1}\n".format(now(), e))
+                        else:
+                            sys.stderr.write("{0} Exception: {1}".format(now(), e))
+                    self.lock.release()
+                    if not self.result_queue.empty() or tasks_running[i] >= self.max_tasks:
+                        try:
+                            job_results = self.result_queue.get(timeout=(self.finish_at - datetime.now()).total_seconds())  # block=tasks_running >= self.max_tasks)
+                        except Empty:
+                            job_results = None
+                        if job_results:
+                            self.notify_results(job_results)  # GaussianProcessClassifier fails here
+                            tasks_running[job_results.optimizer_id] -= 1
+                    command = None
+                    try:
+                        command = self.command_queue.get_nowait()
                     except Empty:
-                        job_results = None
-                    if job_results:
-                        self.notify_results(job_results)  # GaussianProcessClassifier fails here
-                    tasks_running -= 1
-                command = None
-                try:
-                    command = self.command_queue.get_nowait()
-                except Empty:
-                    command = None
-                if command == 'PAUSE':
-                    command = None
-                    try:
-                        command = self.command_queue.get()
-                    except Exception:
-                        print("error reading from command queue")
-                if command == 'STOP':
-                    self.task_queue.put(0)
-                    self.finish_at = datetime.now()
-
+                        command = None
+                    if command == 'PAUSE':
+                        command = None
+                        try:
+                            command = self.command_queue.get()
+                        except Exception:
+                            print("error reading from command queue")
+                    if command == 'STOP':
+                        self.task_queue.put(0)
+                        self.finish_at = datetime.now()
                 if self.timeout:
-                    configuration = None
-                    #print('! tasks running: {0}'.format(tasks_running))
-                # Report completion to job manager
-                #configuration = None
-                #time.sleep(10)
+                    configurations = [None for optimizer in self.optimizers]
+                else:
+                    configurations = [optimizer.get_next_configuration() for optimizer in self.optimizers]
         except KeyboardInterrupt:
-            print("Failing gracefully")
+            print("Ctrl+C detected. {0} task shutting down...".format(self.learner.__name__))
         self.lock.acquire()
         self.task_queue.put((self.learner.__name__, 'Finished'))
-        #print(self.learner.__name__, "ended, closing...")
         self.lock.release()
-        #print("All tasks sent. {0} waiting for poison pill".format(self.learner.__name__))
         job_results = self.result_queue.get()
         if self.timeout:
             job_results = None  # TODO notify that no more jobs will be returned
@@ -138,40 +139,57 @@ class SuggestionTask(Process):
         else:
             print("{0} [Task {1} finished. Should exit now ]".format(now(), self.learner.__name__))
 
+    def combine_labels(self, fold_labels):
+        return np.vstack(fold_labels)
+
     def notify_results(self, job):
         if any([issubclass(type(labels), Exception) for labels in job.fold_labels]):
-            #print("Exception happened")
+            # Exception happened
             self.lock.acquire()
-            self.manager.add_task_results(self, False)
-            metrics = ClassificationMetrics()
-            evaluation_results = EvaluationResults(self.learner.__name__,
-                                                   job.parameters, metrics)
-            self.manager.console_queue.put(evaluation_results)
-            self.lock.release()
+            try:
+                self.manager.add_task_results(self, False)
+                metrics = ClassificationMetrics()
+                results = EvaluationResults(self.learner.__name__,
+                                            job.parameters, metrics)
+                self.manager.console_queue.put(results)
+            except:
+                pass
+            finally:
+                self.lock.release()
         else:
             if self.manager.dataset.is_regression:
                 metrics = RegressionMetrics(self.manager.dataset.get_target(), job.labels, baseline=self.manager.baseline_metrics)
             else:
                 try:
-                    for fold in range(len(job.fold_labels)):
-                        _score = ClassificationMetrics(self.manager.dataset.get_target(fold), job.fold_labels[fold], job.dataset['target_names'], baseline=self.manager.baseline_metrics).score
+                    #job_labels = self.combine_labels(job.fold_labels)  # Probabilities
+                    fold_metrics = []
+                    for fold in xrange(self.manager.dataset.folds):
+                        metrics = ClassificationMetrics(self.manager.dataset.get_target(job.repetition, fold),
+                                                        job.fold_labels[fold], job.dataset['target_names'],
+                                                        baseline=self.manager.baseline_metrics)
                         with open('/tmp/all_results.csv', 'a') as output_file:
-                            output_file.write("{0}, {1}, {2}, {3}, {4}\n".format(_score, hash(str(job.learner.__name__)), str(job.learner.__name__), hash(str(job.parameters)), job.parameters))
-                    metrics = ClassificationMetrics(self.manager.dataset.get_target(), job.labels, job.dataset['target_names'], baseline=self.manager.baseline_metrics)
+                            output_file.write("{0}, {1}, {2}, {3}, {4}\n"
+                                              "".format(metrics.score, hash(str(job.learner.__name__)),
+                                                        str(job.learner.__name__),
+                                                        hash(str(job.parameters)),
+                                                        job.parameters))
+                        fold_metrics.append(metrics)
                 except ValueError:
                     print("NO ERRORS SHOULD HAPPEN HERE! PLEASE CHECK THIS CODE AGAIN")
-                    metrics = ClassificationMetrics()
-            evaluation_results = EvaluationResults(self.learner.__name__,
-                                                   job.parameters, metrics)
-            self.optimizer.add_results(evaluation_results)
-            self.lock.acquire()
-            #self.manager.console_queue.put("{0}: {1}\n".format(evaluation_results.learner, evaluation_results.metrics.score))
-            if self.manager.console_queue:
-                self.manager.console_queue.put(evaluation_results)
-            else:
-                pass  # TODO process messages
-            self.manager.add_task_results(self, True)
-            self.lock.release()
+                    fold_metrics = [ClassificationMetrics()]
+            for metrics in fold_metrics:
+                evaluation_results = EvaluationResults(self.learner.__name__,
+                                                       job.parameters, metrics)
+                optimizer_id = job.optimizer_id
+                self.optimizers[optimizer_id].add_results(evaluation_results)
+                self.lock.acquire()
+                #self.manager.console_queue.put("{0}: {1}\n".format(evaluation_results.learner, evaluation_results.metrics.score))
+                if self.manager.console_queue:
+                    self.manager.console_queue.put(evaluation_results)
+                else:
+                    pass  # TODO process messages
+                self.manager.add_task_results(self, True)
+                self.lock.release()
 
 
 class SuggestionTaskManager():
@@ -200,23 +218,13 @@ class SuggestionTaskManager():
         self.job_manager = JobManager(self.task_queue, self.queues, self.lock, self.finished, self.console_queue, local_cores, node_list)
 
     def get_baseline_metrics(self, baseline_classifier=BaselineClassifier):
-        import numpy as np
         learner = BaselineRegressor() if self.dataset.is_regression else BaselineClassifier()
-        cross_val_group = CrossValidationGroup(learner, None, self.dataset)
-        folds = cross_val_group.create_folds()
-        prediction = []
-        for fold in folds:
-            learner.train(fold.training_set)
-            fold_prediction = learner.predict(fold.testing_set)
-            prediction.append(fold_prediction)
-        if prediction[0].ndim > 1:
-            prediction = np.vstack(prediction)
-        else:
-            prediction = np.hstack(prediction)
+        learner.train(self.dataset)
+        prediction = learner.predict(self.dataset)
         if self.dataset.is_regression:
-            baseline_metrics = RegressionMetrics(self.dataset.get_target(), prediction, standardize=False)
+            baseline_metrics = RegressionMetrics(self.dataset.target, prediction, standardize=False)
         else:
-            baseline_metrics = ClassificationMetrics(self.dataset.get_target(), prediction, self.dataset.target_names, standardize=False)
+            baseline_metrics = ClassificationMetrics(self.dataset.target, prediction, self.dataset.target_names, standardize=False)
         return baseline_metrics
 
     def all_tasks_finished(self):
@@ -247,10 +255,10 @@ class SuggestionTaskManager():
             command_dispatcher.join()
             # job_manager only joins after all tasks have finished
             self.job_manager.join()
-            a = [(result.learner, result.parameters.values(), result.metrics.score) for result in self.optimizer.evaluation_results]
-            with open('/tmp/all_results.txt', 'w') as f:
-                for i in a:
-                    f.write("{0}, {1}, {2}\n".format(*i))
+            #a = [(result.learner, result.parameters.values(), result.metrics.score) for result in self.optimizer.evaluation_results]
+            #with open('/tmp/all_results.txt', 'w') as f:
+            #    for i in a:
+            #        f.write("{0}, {1}, {2}\n".format(*i))
             self.report_exit_caller(self.ranking)
 
     def close_finished_task(self, task):
@@ -258,7 +266,9 @@ class SuggestionTaskManager():
             task.join()
 
     def send_rank(self):
-        print([len(suggestion_task.optimizer.evaluation_results) for suggestion_task in self.suggestion_tasks.values()])
+        raise NotImplemented
+        pass
+        #print([len(suggestion_task.optimizer.evaluation_results) for suggestion_task in self.suggestion_tasks.values()])
         '''
         subranking = {learner: self.ranking[learner][:5] for learner in self.ranking.keys() if self.ranking[learner] is not None}
         print([(learner, [result.metrics.score for result in ranking]) for learner, ranking in subranking.iteritems()])
@@ -276,8 +286,12 @@ class SuggestionTaskManager():
         #self.lock.acquire()
         suggestion_task_name = task.learner.__name__
         self.statuses[suggestion_task_name] = status
-        task.optimizer.evaluation_results.reverse()
-        self.ranking[suggestion_task_name] = task.optimizer.evaluation_results
+        for optimizer in task.optimizers:
+            optimizer.evaluation_results.reverse()
+        #self.ranking[suggestion_task_name] = task.optimizer.evaluation_results
+        self.ranking[suggestion_task_name] = []
+        for optimizer in task.optimizers:
+            self.ranking[suggestion_task_name].extend(optimizer.evaluation_results)
         if self.all_tasks_finished():
             if self.console_queue:
                 self.console_queue.put("[Task Manager] [ Sending poison pill to job manager ] {0}\n".format(now()))

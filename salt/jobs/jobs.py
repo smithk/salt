@@ -9,14 +9,17 @@ from ..utils.strings import now
 def run(job):
     from salt.utils.strings import now
     import sys
-
+    from time import time
     try:
-        import os
+        time_0 = time()
         learner = job.learner(**job.parameters)
-        learner.train(job.training_set)
         #print("training {1} learner with parameters {0}".format(job.parameters, job.fold_id))
-        prediction = learner.predict(job.testing_set)
+        learner.train(job.training_set)
         #print("predicting learner with parameters {0}".format(job.parameters))
+        prediction = learner.predict(job.testing_set)
+        #print("done {0}".format(job.parameters))
+        time_f = time()
+        job.runtime = time_f - time_0
         job.prediction = prediction
     except Exception as e:
         print("{0} [{1} fold] Exception: {2} {3}".format(now(), job.learner.__name__, e, job.parameters))
@@ -44,6 +47,7 @@ class LearningJob(object):
         self.fold_id = fold_id
         self.finished = False
         self.exception = None
+        self.runtime = 0
         #self.job_id = LearningJobManager.get_job_id()
 
     #def run(self, notify_status):
@@ -77,6 +81,7 @@ class LearningJobManager(object):
         # TODO: check exit status
         cross_validation_group = self.job_groups[learning_job.group_id]
         cross_validation_group.fold_labels[learning_job.fold_id - 1] = learning_job.prediction
+        print("result ", learning_job.runtime)
         if all(labels is not None for labels in cross_validation_group.fold_labels):
             self.notify_result(cross_validation_group)
 
@@ -112,7 +117,6 @@ class JobManager(Process):
 
     def run(self):
         import pp
-        #ppservers = ('127.0.0.1', '54.194.63.145', '54.194.43.166','54.194.251.183','54.194.245.87', '54.194.244.87' )
         # Decide on an appropriate timeout
         self.cluster = pp.Server(self.local_cores, ppservers=self.node_list, restart=False)
         self.jobs = {}
@@ -120,7 +124,7 @@ class JobManager(Process):
         try:
             message = self.task_queue.get()
             while message:
-                #print("[Job Manager] [MESSAGE]  {0}".format(message))
+                # print("[Job Manager] [MESSAGE]  {0}".format(message))
                 if type(message) is tuple:
                     task_name, task_signal = message
                     if task_signal == 'Finished':
@@ -210,6 +214,7 @@ class JobManager(Process):
         else:
             learner_name = learning_job.learner.__name__
             cross_validation_group = self.job_groups[learner_name][learning_job.group_id]
+            cross_validation_group.runtime = learning_job.runtime
             if learning_job.exception is not None:
                 # print("exception {0}".format(learning_job.exception.args))
                 cross_validation_group.fold_labels[learning_job.fold_id - 1] = learning_job.exception

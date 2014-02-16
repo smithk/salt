@@ -1,0 +1,27 @@
+@relation toy
+
+@attribute height numeric
+@attribute weight numeric
+@attribute Class {child, teen, adult}
+
+@data
+181, 84.3, teen
+127, 80.1, adult
+184, 89.4, adult
+129, 63.2, child
+180, 73.0, adult
+149, 59.3, child
+99, 44.9, child
+172, 87.6, teen
+113, 55.5, teen
+177, 86.8, adult
+173, 81.2, adult
+164, 69.69, teen
+103, 50.4, child
+193, 100.5, adult
+190, 92.23, adult
+130, 59.1, child
+136, 62.63, child
+105, 48.37, child
+109, 47.12, child
+174, 72.04, teen

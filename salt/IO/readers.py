@@ -49,7 +49,7 @@ class ArffReader(BaseReader):
         # TODO: Implement header reading.
         pass
 
-    def read_file(self, is_regression=False):
+    def read_file(self, is_regression=False, shuffle=True):
         """Read and return all information contained in the file."""
         dataset = None
         try:
@@ -60,7 +60,8 @@ class ArffReader(BaseReader):
             file_metadata_attributes = {key.lower(): value
                                         for key, value in iteritems(file_metadata._attributes)}
             file_metadata._attributes = file_metadata_attributes
-            file_data = _shuffle(file_data)
+            if shuffle:
+                file_data = _shuffle(file_data)
 
             column_names = file_data.dtype.names
             feature_names = [name for name in column_names if name != column_names[-1]]
