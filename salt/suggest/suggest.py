@@ -43,9 +43,9 @@ class SuggestionTask(Process):
         self.learner = learner
         self.parameters = parameters
         #self.optimizer = SequentialOptimizer(self.parameters)
-        #self.optimizer = KDEOptimizer(self.parameters)
-        #self.optimizers = [ShrinkingHypercubeOptimizer(self.parameters) for i in range(5)]
-        self.optimizers = [DefaultConfigOptimizer(self.parameters)]
+        #self.optimizers = [KDEOptimizer(self.parameters)]
+        self.optimizers = [ShrinkingHypercubeOptimizer(self.parameters) for i in range(5)]
+        #self.optimizers = [DefaultConfigOptimizer(self.parameters)]
         self.task_queue = task_queue
         self.result_queue = result_queue
         self.lock = lock

@@ -3,20 +3,12 @@ The :mod:`salt.gui.forms` module provides an implementation of the forms needed
 for the user to interact with salt on a graphical interface.
 """
 
-# pylint: disable=F0401,R0901,R0904,R0924
 from os.path import join, dirname
-from six.moves import tkinter as tk
-from six.moves import tkinter_tkfiledialog as FileDialog
 from six import PY3, iteritems
-from ..utils.debug import Log
-from ..utils.strings import format_dict
-from ..IO.readers import ArffReader
-from ..learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS
-from ..suggest import SuggestionTaskManager
-from ..evaluate import EvaluationResults
-from .controls import ToolTip
+from six.moves import tkinter as tk, tkinter_tkfiledialog as FileDialog
 from multiprocessing import Queue
 from Queue import Empty as EmptyQueue
+from collections import OrderedDict
 import itertools
 import numpy as np
 from datetime import datetime, timedelta
@@ -33,22 +25,14 @@ if PY3:
     from tkinter import ttk
 else:
     import ttk
-
-
-class CustomNavToolbar(NavigationToolbar2TkAgg):
-    def __init__(self, plot_canvas, plot_window, alpha):
-        NavigationToolbar2TkAgg.__init__(self, plot_canvas, plot_window)
-        self.alpha = alpha
-        self.alpha_slider = self._slider(0.05, 0.9)
-        self._message_label.pack(side=tk.LEFT)
-
-    def _slider(self, lower, upper, default=0.05):
-        sliderlabel = tk.Label(master=self, text=u'\u03b1: ')
-        slider = tk.Scale(master=self, from_=lower, to=upper, orient=tk.HORIZONTAL,
-                          resolution=0.01, bigincrement=0.1, bd=1, width=10, showvalue=default, variable=self.alpha)
-        slider.pack(side=tk.RIGHT)
-        sliderlabel.pack(side=tk.RIGHT)
-        return slider
+from ..utils.debug import Log
+from ..utils.strings import format_dict
+from ..IO.readers import ArffReader
+from ..learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS
+from ..suggest import SuggestionTaskManager
+from ..evaluate import EvaluationResults
+from .controls import ToolTip
+from ..evaluate.evaluate import tukey, p_stud
 
 
 class SaltMain(ttk.Frame):
@@ -78,7 +62,8 @@ class SaltMain(ttk.Frame):
         self.summary_figure.tight_layout()
 
     def do_smth(self, *args):
-        self.display_chart(**self.params)
+        #self.display_chart(**self.params)
+        self._update_chart()
 
     def setup_gui(self):
         """Create all user controls."""
@@ -180,6 +165,7 @@ class SaltMain(ttk.Frame):
         np.random.shuffle(self.palette)
 
         self.summary_figure = Figure(figsize=(5, 4), dpi=100)
+        #self.summary_figure.suptitle('[figure title here]')
         self.subplot = self.summary_figure.add_subplot(111)
         #self.subplot.format_coord = lambda x,y: ''
         #self.subplot.set_xlim([-0.5, 5.5])
@@ -190,6 +176,7 @@ class SaltMain(ttk.Frame):
         self.pvalue_axis.set_ylim([0, 1])
         self.pvalue_axis.xaxis.grid(False)
         #plt.setp(self.subplot.get_yticklabels(), rotation='vertical', fontsize='small')
+        #plt.xkcd()
         self.summary_plot = None
         #self.summary_plot = self.subplot.bar(np.arange(5), np.zeros(5), color='rgbcmyk')
         #x = np.arange(0.0, 3.0, 0.01)
@@ -318,100 +305,6 @@ class SaltMain(ttk.Frame):
         #self.summary_plot = self.subplot.scatter([np.mean(configuration) for configuration in configurations.values()], np.arange(len(configurations.values())))
         #self.plot.draw()
 
-    def output_results_(self):
-        # calculate clusters:
-
-        matrix = np.array([result.parameters.values() for result in self.all_results])
-        print(matrix)
-        print(self.all_results[0].parameters.keys())
-        matrix = matrix[:, (1, 2, 3, 4, 6)]
-        matrix = np.float_(matrix)
-        from sklearn.cluster import DBSCAN
-
-        db = DBSCAN(eps=0.1).fit(matrix)
-        #print(db.core_sample_indices_, db.labels_)
-        a = np.argsort(db.labels_)
-        print(a)
-        print(db.labels_)
-        labels = np.atleast_2d(db.labels_)
-        print(np.hstack((matrix, labels.T)))
-        colors = np.array(['#ff0000', '#00ffff', '#0000ff', '#f00f0f', '#ffff00', 'cc929f', '#000000'])
-        self.summary_plot = self.subplot.scatter(matrix[:, 2], matrix[:, 4], c=colors[np.int_(db.labels_)])
-        self.plot.draw()
-
-        # TODO Get best per cluster...
-        '''
-        with open('/tmp/all_results.csv', 'w') as output_file:
-            for result in self.all_results:
-                output_file.write("{0}, {1}, {2}\n".format(result.metrics.score, hash(str(result.learner)), hash(str(result.parameters))))
-        '''
-
-    def update_chart_(self):
-        """Update the chart with the ranking of the results."""
-        max_values = 1000  # TODO parametrize this
-        top_level_children = self.tree_rank.get_children()
-        learner_results = []
-        learner_topn = []
-        degrees = []
-        gammas = []
-        coef0s = []
-        for learner_branch in top_level_children[1:]:
-            learner_entries = self.tree_rank.get_children(learner_branch)[:max_values]
-            learner_name = self.tree_rank.item(learner_branch)['text'][:-len('Classifier')]
-            learner_scores = np.array([float(self.tree_rank.item(i)['values'][-1]) for i in learner_entries])
-            for i in learner_entries:
-                params = self.tree_rank.item(i)['values'][-2]
-                params = params.split()
-                degrees.append(float(params[5][:-1]))
-                gammas.append(float(params[13][:-1]))
-                coef0s.append(float(params[7][:-1]))
-            learner_results.append((learner_name, np.mean(learner_scores), np.std(learner_scores)))
-            learner_topn.append((learner_name, learner_scores[:max_values]))
-        #self.summary_plot = None
-        #self.subplot.cla()
-        self.summary_plot = self.subplot.scatter(coef0s[:100], gammas[:100])
-        self.plot.draw()
-        return
-        names, means, stds = zip(*learner_results)
-        names, topn = zip(*learner_topn)
-        names = ["{0} ({1})".format(name, len(topn[i])) for i, name in enumerate(names)]
-        try:
-            num_learners = len(means)
-            #if self.summary_plot is None or num_learners != len(self.summary_plot.get_children()):
-            if True:  # self.summary_plot is None or num_learners != len(self.summary_plot.values()):
-                self.summary_plot = None
-                self.subplot.cla()
-                self.subplot.axvline(0, linestyle='--', color='k', lw=1.3)
-                #self.subplot.set_title('Learner performance comparison\nDataset: {0}'.format(self.dataset_name))
-                self.subplot.set_title('Dataset: {0}'.format(self.dataset_name))
-                #self.subplot.set_xlabel('Learner')
-                self.subplot.set_xlabel('Performance index')
-                self.subplot.set_xlim([-0.1, 1])
-                self.subplot.yaxis.grid(False)
-                self.subplot.set_autoscaley_on(True)
-                #self.plot.draw()
-                #self.summary_plot = self.subplot.bar(np.arange(num_learners), means,
-                #                                     color=self.palette[:num_learners], width=0.6)
-                #series_y = np.hstack(topn)
-                #series_x = np.hstack([self.random_noise[:len(top), i] + i for (i, top) in enumerate(topn)])
-                self.summary_plot = self.subplot.scatter([np.random.normal(n, 0.3, len(top)) for n in np.arange(num_learners) for top in topn], topn)
-                #self.summary_plot = self.subplot.scatter(series_x, series_y)
-                #self.summary_plot = self.subplot.boxplot(topn, patch_artist=True, vert=False)
-                #plt.setp(self.summary_plot['boxes'], color='#5555ff', lw=2)
-                #for i in range(len(self.summary_plot['whiskers']) / 2):
-                #    plt.setp(self.summary_plot['whiskers'][2*i], color=self.palette[i])
-                #    plt.setp(self.summary_plot['whiskers'][2*i+1], color=self.palette[i])
-                self.subplot.set_yticklabels(names, size=7)
-                self.summary_figure.tight_layout()
-
-            else:
-                for i in range(len(means)):
-                    self.summary_plot[i].set_height(means[i])
-            #self.subplot
-            self.plot.draw()
-        except Exception as www:
-            print(www)
-
     def format_p_value(self, p_value):
         p_value = np.round(p_value, 4)
         if p_value <= 0.001:
@@ -420,6 +313,50 @@ class SaltMain(ttk.Frame):
             return "(>= 0.9)"
         else:
             return str(p_value)
+
+    def get_data_to_analyze(self):
+        # Get best configurations for each learner
+        configurations = {}
+        for result in self.all_results:
+            signature = result.learner + '|' + str(result.parameters)
+            if signature in configurations:
+                configurations[signature].append(result.metrics.score)
+            else:
+                configurations[signature] = [result.metrics.score]
+        best_configs = {}
+        for signature, configuration in iteritems(configurations):
+            learner, parameters = signature.split('|')
+            config_mean = np.mean(configuration)
+            if learner in best_configs:
+                if config_mean >= np.mean(best_configs[learner]):
+                    best_configs[learner] = configuration
+            else:
+                best_configs[learner] = configuration
+        return best_configs
+
+    def _update_chart(self):
+        data = self.get_data_to_analyze()
+        means = np.array([np.mean(model) for model in data.values()])
+        ordering = np.argsort(data.keys())
+        # Store data sorted by name
+        means = means[ordering]
+        data = OrderedDict(zip(np.array(data.keys())[ordering], np.array(data.values())[ordering]))
+        k = len(means)
+        sizes = [len(model) for model in data.values()]
+        df = np.max(sizes) - 1
+        pvalues = []
+        if k >= 2 and df > 3:
+            qs = tukey(data.values())
+            pvalues = [np.round(p_stud(q, k, df), 4) for q in qs]
+        #print(data, best_index, data.values()[best_index], np.mean(data.values()[best_index]), means)
+        stats = {'means': means,
+                 'pvalues': pvalues,
+                 'data': data.values(),
+                 'names': data.keys(),
+                 'sizes': sizes
+                 }
+        title = self.dataset_name
+        self.display_data(title, stats)
 
     def update_chart(self):
         # Get best configurations for each learner
@@ -451,7 +388,6 @@ class SaltMain(ttk.Frame):
                 best_mean = np.mean(best_configs[best_so_far])
                 if current_mean > best_mean:
                     best_so_far = learner
-        from ..evaluate.evaluate import tukey, p_stud
         datapoints = best_configs.values()
         k = len(datapoints)
         df = np.max([len(evaluation) for evaluation in datapoints]) - 1
@@ -494,7 +430,64 @@ class SaltMain(ttk.Frame):
                        'bestindex': bestindex}
         self.display_chart(**self.params)
 
-    def display_chart(self, title, data, means, accept, names, pvalues, bestindex):
+    def display_data(self, title, stats, alpha=None):
+        if alpha is None:
+            alpha = self.alpha.get()
+        bestindex = np.argmax(stats['means'])
+        accept = np.array(stats['pvalues']) >= alpha
+        self.display_chart(title, stats['data'], stats['means'], accept, stats['names'], stats['pvalues'], stats['sizes'],  bestindex)
+
+    def setup_subplot(self, title):
+        self.subplot.cla()
+        self.subplot.axvline(0, linestyle='--', color='k', lw=1.2)
+        self.subplot.set_title('Dataset: {0}. $\\alpha$ threshold: {1}'.format(title, self.alpha.get()))
+        #self.subplot.set_xlabel('Learner')
+        self.subplot.set_xlabel('Performance index')
+        self.subplot.set_xlim([-0.1, 1])
+        self.subplot.yaxis.grid(False)
+        self.subplot.set_autoscaley_on(True)
+
+    def plot_means(self, means):
+        self.subplot.plot(means, np.arange(1, len(means) + 1), 'ro', color='w', marker='^', markeredgecolor='k', markersize=5)
+
+    def setup_legend(self):
+        artists = [plt.Line2D((0, 0), (2, 2), linewidth=0, marker='^', markeredgecolor='k',
+                              markersize=5, markerfacecolor='w'),
+                   plt.Rectangle((0, 0), 1, 1, color='#b7b7b7'),
+                   plt.Rectangle((0, 0), 1, 1, color=self.palette[4])]
+        legend = self.subplot.legend(artists, ['means', 'differences significant',
+                                               'differences not significant'],
+                                     ncol=3, bbox_to_anchor=(1, -0.14), prop={'size': 8},
+                                     numpoints=1, borderaxespad=0)
+        legend_frame = legend.get_frame()
+        legend_frame.set_linewidth(0)
+        legend_frame.set_alpha(0.75)
+
+    def setup_boxplot(self, names, sizes, pvalues, accept, bestindex):
+        plt.setp(self.summary_plot['whiskers'], color='#888888', linestyle='-')
+        yticklabels = plt.getp(self.subplot, 'yticklabels')
+        for i, box in enumerate(self.summary_plot['boxes']):
+            if accept[i]:
+                plt.setp(box, color=self.palette[4], edgecolor='#888888', lw=0.5)
+            else:
+                plt.setp(box, color='#b7b7b7', edgecolor='#888888', lw=0.5)
+            if yticklabels is not None:
+                if not accept[i]:
+                    yticklabels[i].set_alpha(0.5)
+        plt.setp(self.summary_plot['caps'], color='#333333')
+        plt.setp(self.summary_plot['fliers'], color='#555555')
+        plt.setp(self.summary_plot['medians'], color='#222222', linewidth=1)
+        names = ["{0} ({1})".format(name[:-len("Classifier")], sizes[i]) for i, name in enumerate(names)]
+        self.subplot.set_yticklabels(names, size=7)
+        self.pvalue_axis.set_yticks(self.subplot.get_yticks())
+        self.pvalue_axis.yaxis.grid(False)
+        display_p_values = [self.format_p_value(pvalue) for pvalue in pvalues]
+        self.pvalue_axis.set_yticklabels(display_p_values, size=6)
+        self.pvalue_axis.set_ybound(self.subplot.get_ybound())
+        if yticklabels is not None:
+            yticklabels[bestindex].set_fontweight('bold')
+
+    def display_chart(self, title, data, means, accept, names, pvalues, sizes, bestindex):
         # control updating only when there are changes
         accept = np.array(pvalues) >= self.alpha.get()
         try:
@@ -502,98 +495,16 @@ class SaltMain(ttk.Frame):
             #if self.summary_plot is None or num_learners != len(self.summary_plot.get_children()):
             if True:  # self.summary_plot is None or num_learners != len(self.summary_plot.values()):
                 #self.summary_plot = None
-                self.subplot.cla()
-                self.subplot.axvline(0, linestyle='--', color='k', lw=1.2)
-                self.subplot.set_title('Dataset: {0}'.format(title))
-                #self.subplot.set_xlabel('Learner')
-                self.subplot.set_xlabel('Performance index')
-                self.subplot.set_xlim([-0.1, 1])
-                self.subplot.yaxis.grid(False)
-                self.subplot.set_autoscaley_on(True)
+                self.setup_subplot(title)
                 self.summary_plot = self.subplot.boxplot(data, patch_artist=True, vert=False)
-                plt.setp(self.summary_plot['whiskers'], color='#888888', linestyle='-')
-                yticklabels = plt.getp(self.subplot, 'yticklabels')
-                self.subplot.plot(means, np.arange(1, len(means) + 1), 'ro', color='w', marker='^', markeredgecolor='k', markersize=5)
-                for i, box in enumerate(self.summary_plot['boxes']):
-                    if accept[i]:
-                        plt.setp(box, color=self.palette[4], edgecolor='#888888', lw=0.5)
-                    else:
-                        plt.setp(box, color='#b7b7b7', edgecolor='#888888', lw=0.5)
-                    if yticklabels is not None:
-                        if not accept[i]:
-                            yticklabels[i].set_alpha(0.5)
-                plt.setp(self.summary_plot['caps'], color='#333333')
-                plt.setp(self.summary_plot['fliers'], color='#555555')
-                plt.setp(self.summary_plot['medians'], color='#222222', linewidth=1)
-                self.subplot.set_yticklabels(names, size=7)
-                self.pvalue_axis.set_yticks(self.subplot.get_yticks())
-                self.pvalue_axis.yaxis.grid(False)
-                self.pvalue_axis.set_yticklabels(pvalues, size=5)
-                self.pvalue_axis.set_ybound(self.subplot.get_ybound())
-                if yticklabels is not None:
-                    yticklabels[bestindex].set_fontweight('bold')
-                self.summary_figure.tight_layout()
+                self.setup_legend()
+                self.setup_boxplot(names, sizes, pvalues, accept, bestindex)
+                self.plot_means(means)
+                self.summary_figure.tight_layout(rect=(0, 0.07, 1, 1))
                 #  Significantly different from the best (95% confidence)
             else:
                 for i in range(len(means)):
                     self.summary_plot[i].set_height(means[i])
-            self.plot.draw()
-        except Exception as www:
-            print(www)
-
-    def update_chart_old(self):
-        """Update the chart with the ranking of the results."""
-        max_values = 1000  # TODO parametrize this
-        top_level_children = self.tree_rank.get_children()
-        learner_results = []
-        learner_topn = []
-        for learner_branch in top_level_children[1:]:
-            learner_entries = self.tree_rank.get_children(learner_branch)[:max_values]
-            learner_name = self.tree_rank.item(learner_branch)['text'][:-len('Classifier')]
-            learner_scores = np.array([float(self.tree_rank.item(i)['values'][-1]) for i in learner_entries])
-            learner_results.append((learner_name, np.mean(learner_scores), np.std(learner_scores)))
-            learner_topn.append((learner_name, learner_scores[:max_values]))
-        names, means, stds = zip(*learner_results)
-        names, topn = zip(*learner_topn)
-        try:
-            #self.subplot.bar(np.arange(len(means)), means, color='rgbkmy')  # , yerr=stds)
-            num_learners = len(means)
-            #if self.summary_plot is None or num_learners != len(self.summary_plot.get_children()):
-            if self.summary_plot is None or num_learners != len(self.summary_plot.values()):
-                self.summary_plot = None
-                self.subplot.cla()
-                #self.subplot.set_title('Learner performance comparison')
-                #self.subplot.set_xlabel('Learner')
-                self.subplot.set_ylabel('Performance index')
-                self.subplot.set_ylim([-0.1, 1])
-                self.subplot.xaxis.grid(False)
-                self.subplot.set_autoscalex_on(True)
-                #self.plot.draw()
-                #self.summary_plot = self.subplot.bar(np.arange(num_learners), means,
-                #                                     color=self.palette[:num_learners], width=0.6)
-                #series_y = np.hstack(topn)
-                #series_x = np.hstack([self.random_noise[:len(top), i] + i for (i, top) in enumerate(topn)])
-                #self.summary_plot = self.subplot.scatter([ np.random.normal(n, 0.3, len(top)) for n in np.arange(num_learners) for top in topn], topn)
-                #self.summary_plot = self.subplot.scatter(series_x, series_y)
-                self.summary_plot = self.subplot.boxplot(topn, patch_artist=True)
-                plt.setp(self.summary_plot['whiskers'], color='#888888', linestyle='-')
-                #plt.setp(self.summary_plot['boxes'], color='#5555ff', lw=2)
-                for i, box in enumerate(self.summary_plot['boxes']):
-                    plt.setp(box, color=self.palette[i], edgecolor='#888888', lw=0.5)
-                #for i in range(len(self.summary_plot['whiskers']) / 2):
-                #    plt.setp(self.summary_plot['whiskers'][2*i], color=self.palette[i])
-                #    plt.setp(self.summary_plot['whiskers'][2*i+1], color=self.palette[i])
-                plt.setp(self.summary_plot['caps'], color='#333333')
-                plt.setp(self.summary_plot['fliers'], color='#555555')
-                plt.setp(self.summary_plot['medians'], color='#222222', linewidth=1)
-                #self.subplot.set_xticks(np.arange(num_learners) + 0.3)
-                self.subplot.set_xticklabels(names, size=7)
-                self.summary_figure.autofmt_xdate()
-                #self.subplot.set_xlim([self.subplot.get_xlim()[0]-0.3, self.subplot.get_xlim()[1]-0.3])
-            else:
-                for i in range(len(means)):
-                    self.summary_plot[i].set_height(means[i])
-            #self.subplot
             self.plot.draw()
         except Exception as www:
             print(www)
@@ -744,7 +655,7 @@ class SaltMain(ttk.Frame):
                     elif type(message) is EvaluationResults:
                         self.add_result(message)
                         if self.process_state == 'STOPPED':
-                            self.update_chart()
+                            self._update_chart()
                         #self.tree_rank.insert(self.tree_global_rank, tk.END, text=message.learner, values=(message.parameters, message.metrics.score))
                         #if message.learner not in self.learner_ranks:
                         #    self.learner_ranks[message.learner] = self.tree_rank.insert('', tk.END, text=message.learner)
@@ -772,10 +683,10 @@ class SaltMain(ttk.Frame):
                 if timediff.total_seconds() >= 0:
                     timetext = "{0:02d}:{1:02d}:{2:02d}".format(timediff.seconds / 3600, timediff.seconds / 60, timediff.seconds % 60)
                     self.statusbartext.config(text=timetext)
-                self.update_chart()
+                self._update_chart()
         except:
             pass
-        self.after(1000, self.update_clock)
+        self.after(100, self.update_clock)
 
     def show(self):
         """Display the main window."""
@@ -783,3 +694,173 @@ class SaltMain(ttk.Frame):
 
         #self.root.bind('<Configure>', self.on_form_event)
         self.root.mainloop()
+
+    """
+    def output_results_(self):
+        # calculate clusters:
+
+        matrix = np.array([result.parameters.values() for result in self.all_results])
+        print(matrix)
+        print(self.all_results[0].parameters.keys())
+        matrix = matrix[:, (1, 2, 3, 4, 6)]
+        matrix = np.float_(matrix)
+        from sklearn.cluster import DBSCAN
+
+        db = DBSCAN(eps=0.1).fit(matrix)
+        #print(db.core_sample_indices_, db.labels_)
+        a = np.argsort(db.labels_)
+        print(a)
+        print(db.labels_)
+        labels = np.atleast_2d(db.labels_)
+        print(np.hstack((matrix, labels.T)))
+        colors = np.array(['#ff0000', '#00ffff', '#0000ff', '#f00f0f', '#ffff00', 'cc929f', '#000000'])
+        self.summary_plot = self.subplot.scatter(matrix[:, 2], matrix[:, 4], c=colors[np.int_(db.labels_)])
+        self.plot.draw()
+
+        # TODO Get best per cluster...
+        '''
+        with open('/tmp/all_results.csv', 'w') as output_file:
+            for result in self.all_results:
+                output_file.write("{0}, {1}, {2}\n".format(result.metrics.score, hash(str(result.learner)), hash(str(result.parameters))))
+        '''
+
+    def update_chart_old(self):
+        '''Update the chart with the ranking of the results.'''
+        max_values = 1000  # TODO parametrize this
+        top_level_children = self.tree_rank.get_children()
+        learner_results = []
+        learner_topn = []
+        for learner_branch in top_level_children[1:]:
+            learner_entries = self.tree_rank.get_children(learner_branch)[:max_values]
+            learner_name = self.tree_rank.item(learner_branch)['text'][:-len('Classifier')]
+            learner_scores = np.array([float(self.tree_rank.item(i)['values'][-1]) for i in learner_entries])
+            learner_results.append((learner_name, np.mean(learner_scores), np.std(learner_scores)))
+            learner_topn.append((learner_name, learner_scores[:max_values]))
+        names, means, stds = zip(*learner_results)
+        names, topn = zip(*learner_topn)
+        try:
+            #self.subplot.bar(np.arange(len(means)), means, color='rgbkmy')  # , yerr=stds)
+            num_learners = len(means)
+            #if self.summary_plot is None or num_learners != len(self.summary_plot.get_children()):
+            if self.summary_plot is None or num_learners != len(self.summary_plot.values()):
+                self.summary_plot = None
+                self.subplot.cla()
+                #self.subplot.set_title('Learner performance comparison')
+                #self.subplot.set_xlabel('Learner')
+                self.subplot.set_ylabel('Performance index')
+                self.subplot.set_ylim([-0.1, 1])
+                self.subplot.xaxis.grid(False)
+                self.subplot.set_autoscalex_on(True)
+                #self.plot.draw()
+                #self.summary_plot = self.subplot.bar(np.arange(num_learners), means,
+                #                                     color=self.palette[:num_learners], width=0.6)
+                #series_y = np.hstack(topn)
+                #series_x = np.hstack([self.random_noise[:len(top), i] + i for (i, top) in enumerate(topn)])
+                #self.summary_plot = self.subplot.scatter([ np.random.normal(n, 0.3, len(top)) for n in np.arange(num_learners) for top in topn], topn)
+                #self.summary_plot = self.subplot.scatter(series_x, series_y)
+                self.summary_plot = self.subplot.boxplot(topn, patch_artist=True)
+                plt.setp(self.summary_plot['whiskers'], color='#888888', linestyle='-')
+                #plt.setp(self.summary_plot['boxes'], color='#5555ff', lw=2)
+                for i, box in enumerate(self.summary_plot['boxes']):
+                    plt.setp(box, color=self.palette[i], edgecolor='#888888', lw=0.5)
+                #for i in range(len(self.summary_plot['whiskers']) / 2):
+                #    plt.setp(self.summary_plot['whiskers'][2*i], color=self.palette[i])
+                #    plt.setp(self.summary_plot['whiskers'][2*i+1], color=self.palette[i])
+                plt.setp(self.summary_plot['caps'], color='#333333')
+                plt.setp(self.summary_plot['fliers'], color='#555555')
+                plt.setp(self.summary_plot['medians'], color='#222222', linewidth=1)
+                #self.subplot.set_xticks(np.arange(num_learners) + 0.3)
+                self.subplot.set_xticklabels(names, size=7)
+                self.summary_figure.autofmt_xdate()
+                #self.subplot.set_xlim([self.subplot.get_xlim()[0]-0.3, self.subplot.get_xlim()[1]-0.3])
+            else:
+                for i in range(len(means)):
+                    self.summary_plot[i].set_height(means[i])
+            #self.subplot
+            self.plot.draw()
+        except Exception as www:
+            print(www)
+
+    def update_chart_(self):
+        '''Update the chart with the ranking of the results.'''
+        max_values = 1000  # TODO parametrize this
+        top_level_children = self.tree_rank.get_children()
+        learner_results = []
+        learner_topn = []
+        degrees = []
+        gammas = []
+        coef0s = []
+        for learner_branch in top_level_children[1:]:
+            learner_entries = self.tree_rank.get_children(learner_branch)[:max_values]
+            learner_name = self.tree_rank.item(learner_branch)['text'][:-len('Classifier')]
+            learner_scores = np.array([float(self.tree_rank.item(i)['values'][-1]) for i in learner_entries])
+            for i in learner_entries:
+                params = self.tree_rank.item(i)['values'][-2]
+                params = params.split()
+                degrees.append(float(params[5][:-1]))
+                gammas.append(float(params[13][:-1]))
+                coef0s.append(float(params[7][:-1]))
+            learner_results.append((learner_name, np.mean(learner_scores), np.std(learner_scores)))
+            learner_topn.append((learner_name, learner_scores[:max_values]))
+        #self.summary_plot = None
+        #self.subplot.cla()
+        self.summary_plot = self.subplot.scatter(coef0s[:100], gammas[:100])
+        self.plot.draw()
+        return
+        names, means, stds = zip(*learner_results)
+        names, topn = zip(*learner_topn)
+        names = ["{0} ({1})".format(name, len(topn[i])) for i, name in enumerate(names)]
+        try:
+            num_learners = len(means)
+            #if self.summary_plot is None or num_learners != len(self.summary_plot.get_children()):
+            if True:  # self.summary_plot is None or num_learners != len(self.summary_plot.values()):
+                self.summary_plot = None
+                self.subplot.cla()
+                self.subplot.axvline(0, linestyle='--', color='k', lw=1.3)
+                #self.subplot.set_title('Learner performance comparison\nDataset: {0}'.format(self.dataset_name))
+                self.subplot.set_title('Dataset: {0}'.format(self.dataset_name))
+                #self.subplot.set_xlabel('Learner')
+                self.subplot.set_xlabel('Performance index')
+                self.subplot.set_xlim([-0.1, 1])
+                self.subplot.yaxis.grid(False)
+                self.subplot.set_autoscaley_on(True)
+                #self.plot.draw()
+                #self.summary_plot = self.subplot.bar(np.arange(num_learners), means,
+                #                                     color=self.palette[:num_learners], width=0.6)
+                #series_y = np.hstack(topn)
+                #series_x = np.hstack([self.random_noise[:len(top), i] + i for (i, top) in enumerate(topn)])
+                self.summary_plot = self.subplot.scatter([np.random.normal(n, 0.3, len(top)) for n in np.arange(num_learners) for top in topn], topn)
+                #self.summary_plot = self.subplot.scatter(series_x, series_y)
+                #self.summary_plot = self.subplot.boxplot(topn, patch_artist=True, vert=False)
+                #plt.setp(self.summary_plot['boxes'], color='#5555ff', lw=2)
+                #for i in range(len(self.summary_plot['whiskers']) / 2):
+                #    plt.setp(self.summary_plot['whiskers'][2*i], color=self.palette[i])
+                #    plt.setp(self.summary_plot['whiskers'][2*i+1], color=self.palette[i])
+                self.subplot.set_yticklabels(names, size=7)
+                self.summary_figure.tight_layout()
+
+            else:
+                for i in range(len(means)):
+                    self.summary_plot[i].set_height(means[i])
+            #self.subplot
+            self.plot.draw()
+        except Exception as www:
+            print(www)
+    """
+
+
+class CustomNavToolbar(NavigationToolbar2TkAgg):
+    '''Navigation toolbar that includes alpha slider.'''
+    def __init__(self, plot_canvas, plot_window, alpha):
+        NavigationToolbar2TkAgg.__init__(self, plot_canvas, plot_window)
+        self.alpha = alpha
+        self.alpha_slider = self._slider(0.05, 0.9)
+        self._message_label.pack(side=tk.LEFT)
+
+    def _slider(self, lower, upper, default=0.05):
+        sliderlabel = tk.Label(master=self, text=u'\u03b1: ')
+        slider = tk.Scale(master=self, from_=lower, to=upper, orient=tk.HORIZONTAL,
+                          resolution=0.01, bigincrement=0.1, bd=1, width=10, showvalue=default, variable=self.alpha)
+        slider.pack(side=tk.RIGHT)
+        sliderlabel.pack(side=tk.RIGHT)
+        return slider

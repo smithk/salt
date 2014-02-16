@@ -1,4 +1,4 @@
-@relation toy
+@relation toy dataset
 
 @attribute height numeric
 @attribute weight numeric
