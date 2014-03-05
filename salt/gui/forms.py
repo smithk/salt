@@ -184,7 +184,7 @@ class SaltMain(ttk.Frame):
         plot_frame = ttk.Frame(self)
         summary_figure = Figure(figsize=(5, 4), dpi=100)
         plot_canvas = FigureCanvasTkAgg(summary_figure, master=plot_frame)
-        #summary_figure.suptitle('[figure title here]')
+        # summary_figure.suptitle('[figure title here] $\\alpha$')
 
         subplot = summary_figure.add_subplot(111)
         subplot.set_ylim([0, 1])
@@ -398,7 +398,7 @@ class SaltMain(ttk.Frame):
         self.subplot.cla()
         self.subplot.axvline(0, linestyle='--', color='k', lw=1.2)
         #self.subplot.set_title('Dataset: {0}. $\\alpha$ threshold: {1}'.format(title, self.alpha.get()))
-        self.subplot.set_title(u'{0}. \u03b1={1}, n={2}'.format(title, self.alpha.get(), n))
+        self.subplot.set_title(u'{0}. $\\alpha={1}$, $n={2}$'.format(title, self.alpha.get(), n))
         self.subplot.set_xlabel('Performance index')
         self.subplot.set_xlim([-0.1, 1])
         self.subplot.yaxis.grid(False)

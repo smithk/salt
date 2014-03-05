@@ -98,9 +98,10 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         super(ShrinkingHypercubeOptimizer, self).__init__(param_space)
         #self.best_results = {}
         self.hypercubes = {}  # One hypercube for each signature
-        self.expand_rate = 2.0
-        self.shrink_rate = 0.98
+        self.expand_rate = 1.2
+        self.shrink_rate = 0.97
         self.hypercube_threshold = 1e-4
+        self.hypercube_thresholds = {}
         self.configurations = []
         default = param_space.get_default()
         #print("default settings are: ", default)
@@ -141,6 +142,16 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         signature = ParameterSpace.get_cat_signature(self.param_space, configuration)
         hypercube = self.hypercubes.get(str(signature))
         if hypercube is None:
+            numerical_params = ParameterSpace.get_numerical_space(self.param_space, configuration)
+            hypercube = ShrinkingHypercubeOptimizer.create_hypercube(numerical_params)
+            self.hypercubes[str(signature)] = hypercube
+        return hypercube
+
+    def get_hypercube_threshold(self, configuration):
+        # TODO This code is repeated. Optimize
+        signature = ParameterSpace.get_cat_signature(self.param_space, configuration)
+        hypercube_threshold = self.hypercube_thresholds.get(str(signature))
+        if hypercube_threshold is None:
             numerical_params = ParameterSpace.get_numerical_space(self.param_space, configuration)
             hypercube = ShrinkingHypercubeOptimizer.create_hypercube(numerical_params)
             self.hypercubes[str(signature)] = hypercube
@@ -212,12 +223,14 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
     def expand(self, configuration, rate=None):
         expand_rate = rate or self.expand_rate
         hypercube = self.get_hypercube(configuration)
+        hypercube_t = self.get_hypercube_threshold(configuration)
         numerical_params = ParameterSpace.get_numerical_space(self.param_space, configuration)
         can_shrink = len(numerical_params) == 0
         for name, param in iteritems(numerical_params):
             dist = param.distribution
             basedist = param.prior
-            if hypercube[name] > self.hypercube_threshold:
+            #if hypercube[name] > self.hypercube_threshold:
+            if hypercube[name] > hypercube_t[name]:
                 hypercube[name] *= expand_rate
                 can_shrink = True
             if type(dist) is Uniform:
@@ -240,7 +253,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             elif type(dist) is LogNormal:
                 param.distribution = LogUniform(lower=np.log(configuration[name]) - hypercube[name] / 2.0,
                                                 upper=np.log(configuration[name]) + hypercube[name] / 2.0)
-        # print("hypercube size: {0}".format(hypercube))
+        print("hypercube size: {0}".format(hypercube))
         if not can_shrink:
             self.reset_hypercube(configuration)
 
@@ -269,7 +282,10 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             next_configuration = self.initial_configs.pop()
         else:
             if len(self.hypercubes) > 0 and all(value <= self.hypercube_threshold for hypercube in self.hypercubes.values() for value in hypercube.values()):
-                next_configuration = None  # TODO Restart hypercube on different initial conditions
+                self.hypercubes = {}
+                self.mean_sorted_score_lists = []
+                next_configuration = self.param_space.sample_configuration()
+                #next_configuration = None  # TODO Restart hypercube on different initial conditions
             else:
                 next_configuration = self.param_space.sample_configuration()
                 while next_configuration in self.configurations:
