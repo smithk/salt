@@ -225,8 +225,8 @@ class JobManager(Process):
                                        repetition=cross_validation_group.repetition,
                                        fold_id=fold_num)
             try:
-                job = self.send_job(learning_job, group_id)
-                #job = self.cluster.submit(run, (learning_job, fold.training_set, fold.testing_set), modules=('salt.data',), callback=self.notify_status, group=group_id)
+                #job = self.send_job(learning_job, group_id)
+                job = self.cluster.submit(run, (learning_job, fold.training_set, fold.testing_set), modules=('salt.data',), callback=self.notify_status, group=group_id)
                 #del job
                 #print("{0} [Job Manager]     {1} fold sent ({2}, {3}/{4})".format(now(), learner_name, group_id, fold_num, len(folds)))
                 #self.jobs[(group_id, fold_num)] = job
