@@ -7,21 +7,6 @@ from salt.utils.qsturng import qsturng as q_stud, psturng as p_stud
 from warnings import warn
 
 
-class ResultSet(object):
-    '''Hold the list of scores for a given configuration'''
-    def __init__(self, configuration):
-        self.configuration = configuration
-        self.scores = []
-        self.mean = None
-
-    def add(self, new_score):
-        self.scores.append(new_score)
-        self.mean = np.mean(self.scores)
-
-    def __lt__(self, other):
-        return self.mean < other.mean
-
-
 class EvaluationResults(object):
     def __init__(self, learner, parameters, metrics):
         self.learner = learner
@@ -99,7 +84,7 @@ def tukey(datapoints):
 
 
 def pairwise_nemenyi(rank_1, rank_2, k, N=1):
-    nem = np.abs(rank_2 - rank_1) / np.sqrt(k * (k + 1.) / (6. * N))
+    nem = np.abs(rank_2 - rank_1) / np.sqrt(k * (k + 1.) / (12. * N))
     return nem
 
 
@@ -118,6 +103,7 @@ def get_fixed_ranking(to_rank, decreasing=True):
     if decreasing:
         # Reverse ranking
         ranking = len(to_rank) - 1 - ranking
+    print(ordering)
     sorted_data = np.array(to_rank)[ordering]
     unique, indices = np.unique(sorted_data, return_index=True)
     _indices = np.hstack((indices, len(to_rank)))
@@ -137,12 +123,12 @@ def nemenyi(datapoints):
     best = np.argmax(means)
     ranking = get_fixed_ranking(means)
     k = len(means)
-    N = np.min([len(model) for model in datapoints])
+    N = 1
     nemenyi = [pairwise_nemenyi(ranking[i], ranking[best], k, N) for i in range(len(means))]
     return nemenyi
 
 
-def get_statistics(datapoints, verbose=False):
+def get_statistics(datapoints):
     results = None
     if type(datapoints) is list:
         datapoints = np.array(datapoints)
@@ -150,22 +136,23 @@ def get_statistics(datapoints, verbose=False):
     if is_normally_distributed:
         are_variances_homogeneous = test_homoscedasticity(datapoints)
         if are_variances_homogeneous:
+            print("using anova")
             significant_diffs = test_anova(datapoints)
-            if verbose:
-                if significant_diffs:
-                    print("Anova found significant differences between models.")
-                else:
-                    print("Anova did not find significant differences between models.")
+            if significant_diffs:
+                print("Anova found significant differences between models")
+            else:
+                print("Anova did not find significant differences between models. Tukey anyway")
             tukey_results = tukey(datapoints)
+            #df = np.min([len(model_performance) for model_performance in datapoints]) - 1
+            #k = len(datapoints)
             results = tukey_results
     if results is None:  # Couldn't use ANOVA
         # Use non-parametric
         significant_diffs = test_kruskal_wallis(datapoints)
-        if verbose:
-            if significant_diffs:
-                print("KW test found significant differences between models.")
-            else:
-                print("KW test did not find significant differences between models.")
+        if significant_diffs:
+            print("KW test found significant differences between models")
+        else:
+            print("KW test did not find significant differences between models")
         nemenyi_results = nemenyi(datapoints)
         results = nemenyi_results
     return results
@@ -187,25 +174,58 @@ def spearman(dataset1, dataset2):
     else:
         return None
 
-
-def format_p_value(p_value):
-    p_value = np.round(p_value, 4)
-    if p_value <= 0.001:
-        return "(<= 0.001)"
-    elif p_value >= 0.9:
-        return "(>= 0.9)"
-    else:
-        return str(p_value)
-
-
-# For testing purposes
 if __name__ == '__main__':
     datapoints = {'model1': np.random.normal(0.9, 0.1, 30),
                   'model2': np.random.normal(.7, 0.1, 30),
                   'model3': np.random.normal(.3, 0.1, 30),
                   'model4': np.random.normal(.9, .5, 30)}
-    print(spearman(datapoints['model1'], datapoints['model2']))
+    #print(spearman(datapoints['model1'], datapoints['model2']))
+    #results = get_statistics(datapoints.values())
+    #print(datapoints.keys())
+    #print("means: {0}\nvariances: {1}".format([np.mean(evaluation) for evaluation in datapoints.values()],
+    #                                          [np.var(evaluation) for evaluation in datapoints.values()]))
+    #print(results)
+    #k = len(datapoints.values())
+    #v = np.min([len(a) for a in datapoints.values()]) - 1
+    #print([p_stud(t, k, v) for t in tukey(datapoints.values())])
+    #print(datapoints.keys())
+
+    #adjusted_ranking = get_ranking([[1,2,3], [4,5,6], [1,2,3], [1,1,1,1,1]])
+
+    #a_ranking = get_fixed_ranking(np.array([3,1,2,3,5,2,2,4]))
     #to_rank = np.array([7,6,2,3,5,4,5,1,1,3,7,3,4,7])
     to_rank = np.array([0.005, 0.008, 0.017, 0.033, 0.006, 0.005, 0.007, 0.000, 0.063, 0.000, 0.022, 0.047, 0.009, 0.021])
     a_ranking = get_fixed_ranking(to_rank, False)
     print(to_rank, a_ranking)
+
+    #2, 5, 2, 1
+    #2.5 4 2.5 1
+
+    #if results:
+    #    print("mean differences are not significant")
+    #else:
+    #    print("mean differences are significant")
+
+"""
+def get_best(datapoints):
+    # Decide the group of best sets (highest mean) that are not significantly
+    # different to each other
+    if type(datapoints) is list:
+        datapoints = np.array(datapoints)
+    print("Performing analysis over {0} sets".format(len(datapoints)))
+    is_normally_distributed = test_normally_distributed(datapoints)
+    if is_normally_distributed:
+        are_variances_homogeneous = test_homoscedasticity(datapoints)
+        if are_variances_homogeneous:
+            print("using anova")
+            results = test_anova(datapoints)
+            if results:
+                print(tukey(datapoints))
+        else:
+            print("using kruskall-wallis: variances not homogeneous")
+            results = test_kruskal_wallis(datapoints)
+    else:
+        print("using kruskall-wallis: not normally distributed")
+        results = test_kruskal_wallis(datapoints)
+    return results
+"""

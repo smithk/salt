@@ -99,7 +99,10 @@ class Uniform(Distribution):
             value = np.random.uniform(lower, upper, size=None)
             value = int(np.round(value))
             """
-            value = np.random.random_integers(self.lower, self.upper)
+            if self.lower < self.upper:
+                value = np.random.random_integers(self.lower, self.upper)
+            else:
+                value = self.upper
         else:
             value = np.random.uniform(self.lower, self.upper, size=None)
             value = float(value)
@@ -211,6 +214,16 @@ class ParameterSpace(object):
         #    configuration[numerical_parameter.name] = numerical_parameter.sample_configuration()
         return configuration
 
+    def get_default(self):
+        configuration = {}
+        for parameter in self.categorical_params.values():
+            partial_configuration = parameter.get_default()
+            configuration.update(partial_configuration)
+        for parameter in self.numerical_params.values():
+            configuration[parameter.name] = parameter.get_default(configuration)
+        return configuration
+
+
     def __repr__(self):
         depth = 0
         param_string = ' ' * 4 * depth + 'categorical:\n'
@@ -244,7 +257,7 @@ class ParameterSpace(object):
 
     @classmethod
     def _get_keyword(self, string):
-        if string[0] == '$':
+        if type(string) is str and string[0] == '$':
             value = {'false': False, 'true': True, 'none': None}[string[1:].lower()]
         else:
             value = string
@@ -272,8 +285,11 @@ class ParameterSpace(object):
             param_space[name] = parameter
 
         for name, param in iteritems(numerical_params):
-            default = param.get('default')  # TODO: parse types
             discretize = self._get_keyword(param.get('discretize', '_'))
+            default = param.get('default')  # TODO: parse types
+            default = self._get_keyword(default)
+            if type(default) is str:
+                default = int(float(default)) if discretize else float(default)  # Check for errors in config file?
             distribution = param.get('distribution', '').lower()
             valid_if = param.get('valid_if')
             when_invalid = param.get('when_invalid')
@@ -326,11 +342,15 @@ class ParameterSpace(object):
 
     @classmethod
     def get_cat_signature(self, param_space, configuration):
-        assert isinstance(configuration, Mapping)
-        categorical_space = {name: configuration[name] for name in param_space.categorical_params.keys()}
-        for cat in param_space.categorical_params.values():
-            categorical_space.update(self.get_cat_signature(cat.categories[configuration[cat.name]], configuration))
-        return categorical_space
+        try:
+            assert isinstance(configuration, Mapping)
+            categorical_space = {name: configuration[name] for name in param_space.categorical_params.keys()}
+            for cat in param_space.categorical_params.values():
+                categorical_space.update(self.get_cat_signature(cat.categories[configuration[cat.name]], configuration))
+            return categorical_space
+        except KeyError as key_exc:
+            print("An error happened when attempting to retrieve the signature"
+                  "for\n\t{0}\non\n\t{1}".format(configuration, param_space.categorical_params))
 
 
 class Parameter(object):
@@ -362,6 +382,20 @@ class CategoricalParameter(Parameter):
             configuration[self.name] = value
         return configuration
 
+    def get_default(self):
+        configuration = {}
+        if len(self.distribution) > 0:
+            value = self.default
+            if type(value) is np.bool_:  # Conversion to python scalar
+                value = value.item()
+            if value in self.categories:
+                configuration = self.categories[value].get_default()
+            if configuration:
+                configuration[self.name] = value
+            else:
+                configuration = {}
+        return configuration
+
     def __repr__(self):
         param_string = ''
         for category_name in self.distribution.keys():
@@ -390,7 +424,7 @@ class NumericalParameter(Parameter):
     def dump(self):
         """Dump the contents of the parameter into a dictionary-like object."""
         param = self.prior.dump()
-        param['default'] = self.default
+        param['default'] = self.default if type(self.default) in (float, int) else ('$' + str(self.default))
         if self.discretize is not None:
             param['discretize'] = '$' + str(self.discretize)
         if self.valid_if is not None:
@@ -418,6 +452,9 @@ class NumericalParameter(Parameter):
             return value
         except AttributeError:
             print(self.distribution)
+
+    def get_default(self, current_config):
+        return self.default
 
 
 # For testing purposes

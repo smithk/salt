@@ -86,3 +86,12 @@ class ArffReader(BaseReader):
             Log.write_end(file_error)
 
         return dataset
+
+    @classmethod
+    def load_dataset(self, path, is_regression, hold_out=0.3):
+        if path:
+            arff_reader = ArffReader(path)
+            dataset = arff_reader.read_file(is_regression)
+            train_set, test_set = dataset.split(1 - hold_out, create_obj=True)
+
+            return train_set, test_set

@@ -124,9 +124,9 @@ class ClassificationMetrics(BaseMetrics):
 
         self.weights = {
             'accuracy': 1.0,
-            'fscore': 1.0,
-            'matthews': 1.0,
-            'roc_auc': 1.0,
+            'fscore': 0.0,
+            'matthews': 0.0,
+            'roc_auc': 0.0,
             'pr_auc': 0.0,
             'mean_abs_err': 0.0,
             'mean_sq_err': 0.0,

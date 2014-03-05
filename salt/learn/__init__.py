@@ -8,6 +8,7 @@ on classification, regression, and clustering problems.
 
 """
 
+from .base import create_parameter_space
 from .classifiers import (LogisticRegressionClassifier, SGDClassifier,
                           PassiveAggressiveClassifier, RidgeClassifier, RidgeCVClassifier,
                           GaussianNBClassifier, MultinomialNBClassifier, BernoulliNBClassifier,
@@ -27,6 +28,8 @@ from .regressors import (LinearRegressor, RidgeRegressor, RidgeCVRegressor, Lass
                          DecisionTreeRegressor, RandomForestRegressor,
                          ExtraTreeEnsembleRegressor, GradientBoostingRegressor, )
 
+__all__ = ['AVAILABLE_CLASSIFIERS', 'AVAILABLE_REGRESSORS', 'DEFAULT_CLASSIFIERS',
+           'DEFAULT_REGRESSORS', 'create_parameter_space']
 
 AVAILABLE_CLASSIFIERS = {'LogisticRegressionClassifier': LogisticRegressionClassifier,
                          'SGDClassifier': SGDClassifier,

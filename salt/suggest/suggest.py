@@ -6,8 +6,6 @@ from ..learn.classifiers import BaselineClassifier
 from ..learn.regressors import BaselineRegressor
 from ..learn.cross_validation import CrossValidationGroup
 from ..optimize import KDEOptimizer, ShrinkingHypercubeOptimizer, DefaultConfigOptimizer
-#from ..optimize.base import RandomOptimizer
-#from ..jobs import job_manager
 from ..jobs import JobManager
 from ..evaluate.metrics import ClassificationMetrics, RegressionMetrics
 from ..evaluate import EvaluationResults
@@ -15,15 +13,18 @@ from ..utils.strings import now
 from datetime import datetime, timedelta
 import sys
 import numpy as np
+import os
 
 
 class CommandDispatcher(Process):
+    '''Broadcast messages to all running processes via the command queue.'''
     def __init__(self, command_queue, process_queues):
         self.command_queue = command_queue
         self.process_queues = process_queues
         super(CommandDispatcher, self).__init__(target=self.run)
 
     def run(self):
+        print("Command dispatcher running. PID={0}".format(os.getpid()))
         command = None
         while command != 'STOP':
             try:
@@ -38,14 +39,20 @@ class CommandDispatcher(Process):
 
 class SuggestionTask(Process):
     def __init__(self, suggestion_task_manager, learner, parameters,
-                 task_queue, result_queue, lock, console_queue, finish_at, max_tasks, command_queue):
+                 task_queue, result_queue, lock, console_queue, finish_at, max_tasks, command_queue, optimizer):
         self.manager = suggestion_task_manager
         self.learner = learner
         self.parameters = parameters
         #self.optimizer = SequentialOptimizer(self.parameters)
-        #self.optimizers = [KDEOptimizer(self.parameters)]
-        self.optimizers = [ShrinkingHypercubeOptimizer(self.parameters) for i in range(5)]
-        #self.optimizers = [DefaultConfigOptimizer(self.parameters)]
+        #optimizer_values = ('None (run with default parameters)', 'Random search', 'Shrinking hypercube')
+        if optimizer == 'Random search':
+            self.optimizer = KDEOptimizer(self.parameters)
+        elif optimizer == 'Shrinking hypercube':
+            self.optimizer = ShrinkingHypercubeOptimizer(self.parameters)
+        elif optimizer == 'None (run with default parameters)':
+            self.optimizer = DefaultConfigOptimizer(self.parameters)
+        else:
+            raise ValueError('Invalid optimization method')
         self.task_queue = task_queue
         self.result_queue = result_queue
         self.lock = lock
@@ -69,70 +76,111 @@ class SuggestionTask(Process):
 
     timeout = property(_is_timeout)
 
-    def run(self):
-        configurations = [optimizer.get_next_configuration() for optimizer in self.optimizers]
-        tasks_running = [0] * len(configurations)
+    def send_batch(self, batch):
+        '''Send a list of cross validation groups to the cluster for processing.
+            The list corresponds to the n repetitions in a n x k cross validation setup.'''
+        batch_sent = False
         try:
-            while not all(configuration is None for configuration in configurations):
-                for i, optimizer in enumerate(self.optimizers):
-                    if tasks_running[i] >= self.max_tasks - 1:
-                        import time
-                        time.sleep(0.5)  # hack; otherwise the gui freezes
-                    configuration = configurations[i]
-                    if configuration is None:
-                        continue
-                    cross_val_groups = [CrossValidationGroup(self.learner, configuration,
-                                                             self.manager.dataset, repetition,
-                                                             optimizer_id=i)
-                                        for repetition in xrange(self.manager.dataset.repetitions)]
-                    self.lock.acquire()
-                    try:
-                        for cross_val_group in cross_val_groups:
-                            self.task_queue.put(cross_val_group)
-                        tasks_running[i] += 1
-                    except Exception as e:
-                        if self.console_queue:
-                            self.console_queue.put("{0} Exception: {1}\n".format(now(), e))
-                        else:
-                            sys.stderr.write("{0} Exception: {1}".format(now(), e))
-                    self.lock.release()
-                    if not self.result_queue.empty() or tasks_running[i] >= self.max_tasks:
-                        try:
-                            job_results = self.result_queue.get(timeout=(self.finish_at - datetime.now()).total_seconds())  # block=tasks_running >= self.max_tasks)
-                        except Empty:
-                            job_results = None
-                        if job_results:
-                            self.notify_results(job_results)  # GaussianProcessClassifier fails here
-                            tasks_running[job_results.optimizer_id] -= 1
-                    command = None
-                    try:
-                        command = self.command_queue.get_nowait()
-                    except Empty:
-                        command = None
-                    if command == 'PAUSE':
-                        command = None
-                        try:
-                            command = self.command_queue.get()
-                        except Exception:
-                            print("error reading from command queue")
-                    if command == 'STOP':
-                        self.task_queue.put(0)
-                        self.finish_at = datetime.now()
-                if self.timeout:
-                    configurations = [None for optimizer in self.optimizers]
+            for task in batch:
+                # Send the k folds for the current repetition.
+                self.task_queue.put(task)
+            batch_sent = True
+        except Exception as e:
+            error_message = "{0} Exception sending batch to the cluster: {1}\n".format(now(), e)
+            if self.console_queue:
+                self.console_queue.put(error_message)
+            else:
+                sys.stderr.write(error_message)
+        return batch_sent
+
+    def process_finished_tasks(self):
+        '''Check if finished cross-validation groups have been finished and process them.'''
+        tasks_processed = 0
+        while not self.result_queue.empty() and not self.timeout:  # Ignore results after timeout
+            try:
+                timeout_seconds = (self.finish_at - datetime.now()).total_seconds()
+                job_results = self.result_queue.get(timeout=timeout_seconds)
+            except Empty:
+                job_results = None
+            if job_results:
+                self.notify_results(job_results)  # TODO GaussianProcessClassifier fails here
+                tasks_processed += 1
+            self.process_commands()
+        return tasks_processed
+
+    def process_commands(self):
+        '''Process commands if any available.'''
+        command = None
+        try:
+            command = self.command_queue.get_nowait()
+        except Empty:
+            command = None
+        if command == 'PAUSE':
+            command = None
+            try:
+                # Wait for the next command (block the queue meanwhile)
+                # TODO Process finished tasks that might be returned by the
+                # cluster while paused, to prevent from clogging the result queue.
+                command = self.command_queue.get()
+            except Exception:
+                print("error reading from command queue")
+        if command == 'STOP':
+            print("{0} Task: STOP SIGNAL ARRIVED".format(self.learner.__name__))
+            self.task_queue.put('DIE!')  # Poison pill for the job manager
+            self.finish_at = datetime.now()  # Force timeout
+
+    def run(self):
+        print("Learner {0} running. PID={1}".format(self.learner.__name__, os.getpid()))
+        # Run learner with default parameters
+        configuration = {}  # self.optimizer.get_next_configuration()
+        tasks_running = 0
+        repetitions = self.manager.dataset.repetitions
+        try:
+            while configuration is not None:
+                if tasks_running > self.max_tasks - 1:
+                    #print("{0} Task: Maximum number of running tasks reached. {1} tasks running".format(self.learner.__name__, tasks_running))
+                    while tasks_running > self.max_tasks / 2 and not self.timeout:
+                        # Wait until cluster processes at least half of its
+                        # load to send a new batch
+                        tasks_processed = self.process_finished_tasks()
+                        tasks_running -= tasks_processed
+                        #if tasks_processed > 0:
+                        #    print("{0} tasks running".format(tasks_running))
+                # Create job batch: r x k folds
+                batch = [CrossValidationGroup(self.learner, configuration, self.manager.dataset,
+                                              repetition, optimizer_id=0)  # TODO Remove reference to optimizer_id
+                         for repetition in xrange(repetitions)]
+                batch_sent = self.send_batch(batch)
+                if batch_sent:
+                    tasks_running += repetitions
                 else:
-                    configurations = [optimizer.get_next_configuration() for optimizer in self.optimizers]
+                    print("couldn't send new batch")
+                # Process finished batches if available
+                tasks_processed = self.process_finished_tasks()
+                tasks_running -= tasks_processed
+                #if tasks_processed > 0:
+                #    print(">>>>>{0} tasks running".format(tasks_running))
+                self.process_commands()
+                if self.timeout:
+                    # TODO Send only one poison pill.
+                    self.task_queue.put('DIE!')  # Poison pill for the job manager
+                    configuration = None
+                else:
+                    import time
+                    time.sleep(0.4)
+                    configuration = self.optimizer.get_next_configuration()
         except KeyboardInterrupt:
             print("Ctrl+C detected. {0} task shutting down...".format(self.learner.__name__))
-        self.lock.acquire()
         self.task_queue.put((self.learner.__name__, 'Finished'))
-        self.lock.release()
-        job_results = self.result_queue.get()
+        while tasks_running > 0 and not self.timeout:
+            tasks_processed = self.process_finished_tasks()
+            tasks_running -= tasks_processed
+            if tasks_processed > 0:
+                print("{0} tasks running".format(tasks_running))
+        #job_results = self.result_queue.get()
         if self.timeout:
             job_results = None  # TODO notify that no more jobs will be returned
-        while job_results:
             self.notify_results(job_results)
-            job_results = self.result_queue.get()
         self.status = 'Finished'
         if self.console_queue:
             self.console_queue.put("{0} [Task {1} finished. Should exit now ]\n".format(now(), self.learner.__name__))
@@ -143,9 +191,11 @@ class SuggestionTask(Process):
         return np.vstack(fold_labels)
 
     def notify_results(self, job):
+        if job is None:
+            return
         if any([issubclass(type(labels), Exception) for labels in job.fold_labels]):
             # Exception happened
-            self.lock.acquire()
+            #self.lock.acquire()
             try:
                 self.manager.add_task_results(self, False)
                 metrics = ClassificationMetrics()
@@ -154,8 +204,8 @@ class SuggestionTask(Process):
                 self.manager.console_queue.put(results)
             except:
                 pass
-            finally:
-                self.lock.release()
+            #finally:
+            #    self.lock.release()
         else:
             if self.manager.dataset.is_regression:
                 metrics = RegressionMetrics(self.manager.dataset.get_target(), job.labels, baseline=self.manager.baseline_metrics)
@@ -166,13 +216,18 @@ class SuggestionTask(Process):
                     for fold in xrange(self.manager.dataset.folds):
                         metrics = ClassificationMetrics(self.manager.dataset.get_target(job.repetition, fold),
                                                         job.fold_labels[fold], job.dataset['target_names'],
-                                                        baseline=self.manager.baseline_metrics)
+                                                        baseline=self.manager.baseline_metrics, standardize=False)
+                        # ATTENTION: standardize=False doesn't make use of the
+                        # baseline!!!! (Deactivated temporarily for testing)
+
+                        '''
                         with open('/tmp/all_results.csv', 'a') as output_file:
                             output_file.write("{0}, {1}, {2}, {3}, {4}\n"
                                               "".format(metrics.score, hash(str(job.learner.__name__)),
                                                         str(job.learner.__name__),
                                                         hash(str(job.parameters)),
                                                         job.parameters))
+                        '''
                         fold_metrics.append(metrics)
                 except ValueError:
                     print("NO ERRORS SHOULD HAPPEN HERE! PLEASE CHECK THIS CODE AGAIN")
@@ -180,20 +235,24 @@ class SuggestionTask(Process):
             for metrics in fold_metrics:
                 evaluation_results = EvaluationResults(self.learner.__name__,
                                                        job.parameters, metrics)
-                optimizer_id = job.optimizer_id
-                self.optimizers[optimizer_id].add_results(evaluation_results)
-                self.lock.acquire()
+                #print("{0}: {1}\n".format(evaluation_results.learner, evaluation_results.metrics.score))
+                if evaluation_results.parameters != {}:
+                    #self.lock.acquire()
+                    self.optimizer.add_results(evaluation_results)
+                    #self.lock.release()
                 #self.manager.console_queue.put("{0}: {1}\n".format(evaluation_results.learner, evaluation_results.metrics.score))
                 if self.manager.console_queue:
                     self.manager.console_queue.put(evaluation_results)
                 else:
                     pass  # TODO process messages
                 self.manager.add_task_results(self, True)
-                self.lock.release()
+        job.dataset = None
 
 
 class SuggestionTaskManager():
-    def __init__(self, dataset, learners, parameters, metrics, time, report_exit_caller, console_queue=None, command_queue=None, local_cores=0, node_list=None):
+    def __init__(self, dataset, learners, parameters, metrics, time, report_exit_caller,
+                 console_queue=None, command_queue=None, local_cores=0, node_list=None,
+                 optimizer='', max_jobs=10):
         self.dataset = dataset
         self.metrics = metrics
         self.console_queue = console_queue
@@ -212,10 +271,10 @@ class SuggestionTaskManager():
         self.command_queue = command_queue
         self.suggestion_tasks = {learner.__name__:
                                  SuggestionTask(self, learner, parameters[learner.__name__],
-                                                self.task_queue, self.queues[learner.__name__], self.lock, self.console_queue, finish_at, 2,
-                                                self.command_queues[learner.__name__])
+                                                self.task_queue, self.queues[learner.__name__], self.lock, self.console_queue, finish_at, max_jobs,
+                                                self.command_queues[learner.__name__], optimizer=optimizer)
                                  for learner in learners}
-        self.job_manager = JobManager(self.task_queue, self.queues, self.lock, self.finished, self.console_queue, local_cores, node_list)
+        self.job_manager = JobManager(self.dataset, self.task_queue, self.queues, self.lock, self.finished, self.console_queue, local_cores, node_list)
 
     def get_baseline_metrics(self, baseline_classifier=BaselineClassifier):
         learner = BaselineRegressor() if self.dataset.is_regression else BaselineClassifier()
@@ -286,12 +345,10 @@ class SuggestionTaskManager():
         #self.lock.acquire()
         suggestion_task_name = task.learner.__name__
         self.statuses[suggestion_task_name] = status
-        for optimizer in task.optimizers:
-            optimizer.evaluation_results.reverse()
+        task.optimizer.evaluation_results.reverse()
         #self.ranking[suggestion_task_name] = task.optimizer.evaluation_results
         self.ranking[suggestion_task_name] = []
-        for optimizer in task.optimizers:
-            self.ranking[suggestion_task_name].extend(optimizer.evaluation_results)
+        self.ranking[suggestion_task_name].extend(task.optimizer.evaluation_results)
         if self.all_tasks_finished():
             if self.console_queue:
                 self.console_queue.put("[Task Manager] [ Sending poison pill to job manager ] {0}\n".format(now()))

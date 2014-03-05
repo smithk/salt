@@ -61,7 +61,7 @@
 % 
 % 9. Class Distribution: 33.3% for each of 3 classes.
 
-@RELATION iris
+@RELATION Iris dataset
 
 @ATTRIBUTE sepallength	REAL
 @ATTRIBUTE sepalwidth 	REAL

@@ -91,7 +91,7 @@ def run_cmdline(options):
     if regressor_settings:
         default_regressors = [AVAILABLE_REGRESSORS[key] for key in regressor_settings
                               if regressor_settings[key].get('enabled', False)]
-    import sys
+    #import sys
     # sys.exit(0)
     learners = default_regressors if is_regression else default_classifiers
     # for testing:
@@ -158,6 +158,7 @@ def main():
 
     if options['quiet']:
         Log.supress_output = True
+    print("Main PID={0}".format(_os.getpid()))
     installed_modules = check_environment()
     Log.write("Installed dependencies:\n{installed_modules}".format(
         installed_modules=format_dict(installed_modules, separator='\t')))
