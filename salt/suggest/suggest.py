@@ -128,6 +128,9 @@ class SuggestionTask(Process):
             print("{0} Task: STOP SIGNAL ARRIVED".format(self.learner.__name__))
             self.task_queue.put('DIE!')  # Poison pill for the job manager
             self.finish_at = datetime.now()  # Force timeout
+        if type(command) is datetime:
+            self.finish_at = command
+            print("new timeout at {0}".format(self.finish_at))
 
     def run(self):
         print("Learner {0} running. PID={1}".format(self.learner.__name__, os.getpid()))

@@ -136,6 +136,12 @@ class SaltMain(ttk.Frame):
         statusbar = ttk.Frame(self)
         statusbartext = ttk.Label(statusbar, textvariable=self.status_msg)
         statusbartext.pack(side=tk.LEFT, fill=tk.X)
+
+        add5min_button = ttk.Button(statusbar, text='+5 min', width=10)
+        add5min_button['command'] = self.add_5_min
+        ToolTip(add5min_button, msg="Delay the timeout to 5 minutes later")
+        add5min_button.pack(side=tk.LEFT)
+
         sizegrip = ttk.Sizegrip(statusbar)
 
         self.selected_optimizer = tk.StringVar()
@@ -150,6 +156,10 @@ class SaltMain(ttk.Frame):
         optimizer_list.pack(side=tk.RIGHT)
         optimizer_label.pack(side=tk.RIGHT)
         statusbar.pack(side=tk.BOTTOM, fill=tk.X, padx=2, pady=2)
+
+    def add_5_min(self):
+        self.finish_at += timedelta(minutes=5)
+        self.command_queue.put(self.finish_at)
 
     def setup_console_frame(self):
         console_frame = ttk.Frame(self)
@@ -590,7 +600,7 @@ class SaltMain(ttk.Frame):
         self.learner_ranks = {}
 
     def add_result(self, eval_result):
-        self.lock.acquire()
+        #self.lock.acquire()
         top_n = self.max_results
         # Create top-level branch for classifier if it does not exist
         if eval_result.learner not in self.learner_ranks:
@@ -637,12 +647,13 @@ class SaltMain(ttk.Frame):
                 self.default_results = OrderedDict(zip(keys, values))
         #else:
         self.all_results.append(eval_result)
-        self.lock.release()
+        #self.lock.release()
         self.update_plot_required = True
 
     def update_content(self):
         try:
-            while True:
+            #while True:
+            if not self.message_queue.empty():
                 message = self.message_queue.get_nowait()
                 if message is None:
                     self.console.config(state=tk.NORMAL)
