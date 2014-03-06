@@ -66,9 +66,11 @@ class SaltMain(ttk.Frame):
         self.pack(fill=tk.BOTH, expand=1)
         self.alpha = tk.DoubleVar()
         self.show_default = tk.BooleanVar()
+        self.show_n = tk.BooleanVar()
         self.setup_gui()
         self.alpha.trace("w", self.call_update_chart)
         self.show_default.trace("w", self.call_update_chart)
+        self.show_n.trace("w", self.call_update_chart)
 
     def call_update_chart(self, *args):
         if self.dataset_path is not None:
@@ -206,7 +208,8 @@ class SaltMain(ttk.Frame):
 
         plot_canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=1)
         plot_canvas._tkcanvas.pack(fill=tk.BOTH, expand=1)
-        plot_toolbar = CustomNavToolbar(plot_canvas, plot_frame, alpha_var=self.alpha, show_default_var=self.show_default)
+        plot_toolbar = CustomNavToolbar(plot_canvas, plot_frame, alpha_var=self.alpha,
+                                        show_default_var=self.show_default, show_n_var=self.show_n)
         plot_toolbar.update()
         plot_frame.pack()
         summary_figure.tight_layout()
@@ -466,7 +469,10 @@ class SaltMain(ttk.Frame):
         plt.setp(self.summary_plot['caps'], color='#333333', lw=lw)
         plt.setp(self.summary_plot['fliers'], color='#333333', markeredgecolor='#333333', marker='o', markersize=3.2)
         plt.setp(self.summary_plot['medians'], color='#e5e5e5', linewidth=1.7)
-        names = ["{0} ({1})".format(name[:-len("Classifier")], sizes[i]) for i, name in enumerate(names)]
+        if self.show_n.get():
+            names = ["{0} ({1})".format(name[:-len("Classifier")], sizes[i]) for i, name in enumerate(names)]
+        else:
+            names = [name[:-len("Classifier")] for name in names]
 
         for cap in self.summary_plot['caps']:
             shrink = 0.5
@@ -704,12 +710,16 @@ class SaltMain(ttk.Frame):
 
 class CustomNavToolbar(NavigationToolbar2TkAgg):
     '''Navigation toolbar that includes alpha slider.'''
-    def __init__(self, plot_canvas, plot_window, alpha_var, show_default_var):
+    def __init__(self, plot_canvas, plot_window, alpha_var, show_default_var, show_n_var):
         NavigationToolbar2TkAgg.__init__(self, plot_canvas, plot_window)
         self.alpha = alpha_var
         self.show_default = show_default_var
+        self.show_n = show_n_var
         self.alpha_slider = self._slider(0.05, 0.9)
+        self.check_container = ttk.Frame(self)
+        self.check_container.pack(side=tk.LEFT)
         self.show_default_check = self._check_default()
+        self.show_num_samples = self._check_show_n()
         self._message_label.pack(side=tk.LEFT)
 
     def _slider(self, lower, upper, default=0.05):
@@ -720,7 +730,12 @@ class CustomNavToolbar(NavigationToolbar2TkAgg):
         sliderlabel.pack(side=tk.RIGHT)
         return slider
 
-    def _check_default(self):
-        check = tk.Checkbutton(master=self, text="Show default configuration performances", variable=self.show_default)
+    def _check_show_n(self):
+        check = tk.Checkbutton(master=self.check_container, text="Show number of samples per box", variable=self.show_n)
         check.pack(side=tk.LEFT)
+        return check
+
+    def _check_default(self):
+        check = tk.Checkbutton(master=self.check_container, text="Show default configuration performances", variable=self.show_default)
+        check.pack(side=tk.BOTTOM)
         return check
