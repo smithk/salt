@@ -249,7 +249,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         numerical_params = ParameterSpace.get_numerical_space(self.param_space, configuration)
         print("CAN'T SHRINK HYPERCUBE {0} for {1}, RESETTING".format(signature, self.param_space.name))
         for name, param in iteritems(numerical_params):
-            print("restoring distribution {0}".format(param))
+            print("restoring distribution {0}".format(param.prior))
             param.distribution = deepcopy(param.prior)
         if str(signature) in self.hypercubes:
             del self.hypercubes[str(signature)]
@@ -258,6 +258,8 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
                 self.mean_sorted_score_lists.remove(self.hypercube_scores[str(signature)])
             except:
                 pass
+            for score in self.hypercube_scores[str(signature)].values():
+                self.mean_sorted_score_lists.remove(score)
             del self.hypercube_scores[str(signature)]
             # but keep the references in mean_sorted_score_lists
 

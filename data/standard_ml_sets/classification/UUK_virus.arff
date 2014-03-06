@@ -1,4 +1,4 @@
-@relation 'HTS data set-weka.filters.unsupervised.instance.Randomize-S42-weka.filters.unsupervised.instance.RemovePercentage-P75.0-weka.filters.unsupervised.instance.RemovePercentage-P4.21'
+@relation UUK_virus
 
 @attribute feature1 numeric
 @attribute feature2 numeric

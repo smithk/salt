@@ -67,6 +67,9 @@ class Distribution(object):
         """Dump the contents of the distribution into a dictionary-like object."""
         return {}
 
+    def __str__(self):
+        return "[BaseDistribution]"
+
 
 class Uniform(Distribution):
     """Uniform distribution"""
@@ -116,6 +119,9 @@ class Uniform(Distribution):
         dist['upper'] = self.upper
         return dist
 
+    def __str__(self):
+        return 'Uniform({0} to {1})'.format(self.lower, self.upper)
+
 
 class LogUniform(Distribution):
     """LogUniform distribution"""
@@ -143,6 +149,9 @@ class LogUniform(Distribution):
         dist['upper'] = self.upper
         return dist
 
+    def __str__(self):
+        return 'LogUniform({0} to {1})'.format(self.lower, self.upper)
+
 
 class Normal(Distribution):
     """Normal (Gaussian) distribution"""
@@ -169,6 +178,10 @@ class Normal(Distribution):
         dist['stdev'] = self.stdev
         return dist
 
+    def __str__(self):
+        return 'Normal({0}, {1})'.format(self.mean, self.stdev)
+
+
 
 class LogNormal(Distribution):
     """LogNormal distribution"""
@@ -192,6 +205,9 @@ class LogNormal(Distribution):
         dist['mean'] = self.mean
         dist['stdev'] = self.stdev
         return dist
+
+    def __str__(self):
+        return 'LogNormal(mu={0}, sigma={1})'.format(self.mean, self.stdev)
 
 
 class ParameterSpace(object):
@@ -222,7 +238,6 @@ class ParameterSpace(object):
         for parameter in self.numerical_params.values():
             configuration[parameter.name] = parameter.get_default(configuration)
         return configuration
-
 
     def __repr__(self):
         depth = 0

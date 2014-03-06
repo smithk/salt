@@ -1,4 +1,4 @@
-@relation 'HTS data set'
+@relation Ribosome_biogenesis
 @attribute 'feature1' real
 @attribute 'feature2' real
 @attribute 'feature3' real
