@@ -85,10 +85,10 @@ class KDEOptimizer(BaseOptimizer):
     def get_next_configuration(self):
         next_configuration = self.param_space.sample_configuration()
         while next_configuration in self.configurations:
-            if self.configurations_exhausted():
-                next_configuration = None
-                break
-            next_configuration = self.param_space.sample_configuration()
+            #if self.configurations_exhausted():
+            #    next_configuration = None
+            #    break
+            #next_configuration = self.param_space.sample_configuration()
         self.configurations.append(next_configuration)
         return next_configuration
 
