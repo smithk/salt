@@ -101,7 +101,6 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         self.expand_rate = 1.2
         self.shrink_rate = 0.97
         self.hypercube_threshold = 1e-4
-        self.hypercube_thresholds = {}
         self.configurations = []
         default = param_space.get_default()
         #print("default settings are: ", default)
@@ -142,16 +141,6 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         signature = ParameterSpace.get_cat_signature(self.param_space, configuration)
         hypercube = self.hypercubes.get(str(signature))
         if hypercube is None:
-            numerical_params = ParameterSpace.get_numerical_space(self.param_space, configuration)
-            hypercube = ShrinkingHypercubeOptimizer.create_hypercube(numerical_params)
-            self.hypercubes[str(signature)] = hypercube
-        return hypercube
-
-    def get_hypercube_threshold(self, configuration):
-        # TODO This code is repeated. Optimize
-        signature = ParameterSpace.get_cat_signature(self.param_space, configuration)
-        hypercube_threshold = self.hypercube_thresholds.get(str(signature))
-        if hypercube_threshold is None:
             numerical_params = ParameterSpace.get_numerical_space(self.param_space, configuration)
             hypercube = ShrinkingHypercubeOptimizer.create_hypercube(numerical_params)
             self.hypercubes[str(signature)] = hypercube
@@ -223,14 +212,12 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
     def expand(self, configuration, rate=None):
         expand_rate = rate or self.expand_rate
         hypercube = self.get_hypercube(configuration)
-        hypercube_t = self.get_hypercube_threshold(configuration)
         numerical_params = ParameterSpace.get_numerical_space(self.param_space, configuration)
         can_shrink = len(numerical_params) == 0
         for name, param in iteritems(numerical_params):
             dist = param.distribution
             basedist = param.prior
-            #if hypercube[name] > self.hypercube_threshold:
-            if hypercube[name] > hypercube_t[name]:
+            if hypercube[name] > self.hypercube_threshold:
                 hypercube[name] *= expand_rate
                 can_shrink = True
             if type(dist) is Uniform:
