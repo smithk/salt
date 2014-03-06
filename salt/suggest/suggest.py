@@ -216,7 +216,7 @@ class SuggestionTask(Process):
                     for fold in xrange(self.manager.dataset.folds):
                         metrics = ClassificationMetrics(self.manager.dataset.get_target(job.repetition, fold),
                                                         job.fold_labels[fold], job.dataset['target_names'],
-                                                        baseline=self.manager.baseline_metrics, standardize=False)
+                                                        baseline=self.manager.baseline_metrics, standardize=True)
                         # ATTENTION: standardize=False doesn't make use of the
                         # baseline!!!! (Deactivated temporarily for testing)
 
