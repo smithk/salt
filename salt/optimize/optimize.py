@@ -88,7 +88,7 @@ class KDEOptimizer(BaseOptimizer):
             #if self.configurations_exhausted():
             #    next_configuration = None
             #    break
-            #next_configuration = self.param_space.sample_configuration()
+            next_configuration = self.param_space.sample_configuration()
         self.configurations.append(next_configuration)
         return next_configuration
 
