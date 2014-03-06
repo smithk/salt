@@ -82,7 +82,7 @@
 %    From: 0                       To: tested_negative     
 %    From: 1                       To: tested_positive     
 %
-@relation pima_diabetes
+@relation Diabetes dataset
 @attribute 'preg' real
 @attribute 'plas' real
 @attribute 'pres' real

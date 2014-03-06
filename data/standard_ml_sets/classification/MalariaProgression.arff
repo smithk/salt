@@ -1,4 +1,4 @@
-@relation 'Malaria progression'
+@relation Malaria progression
 @attribute 'feature1' real
 @attribute 'feature2' real
 @attribute 'feature3' real

@@ -62,7 +62,7 @@
 %
 %8. Missing Values: None
 
-@relation ionosphere
+@relation Ionosphere dataset
 
 @attribute a01 real
 @attribute a02 real

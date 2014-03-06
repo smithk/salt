@@ -277,9 +277,9 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
                 next_configuration = self.param_space.sample_configuration()
                 while next_configuration in self.configurations:
                     print("configuration {0} has already been sampled".format(next_configuration))
-                    if self.configurations_exhausted():  # TODO Check exhaustion properly
-                        next_configuration = None
-                        break
+                    #if self.configurations_exhausted():  # TODO Check exhaustion properly
+                    #    next_configuration = None
+                    #    break
                     self.reset_hypercube(next_configuration)
                     next_configuration = self.param_space.sample_configuration()
             self.configurations.append(next_configuration)

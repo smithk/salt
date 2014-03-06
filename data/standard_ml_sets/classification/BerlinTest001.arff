@@ -1,4 +1,4 @@
-@relation 'HTS data set'
+@relation Berlin dataset
 @attribute 'feature1' real
 @attribute 'feature2' real
 @attribute 'feature3' real

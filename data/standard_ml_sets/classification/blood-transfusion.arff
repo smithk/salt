@@ -1,4 +1,4 @@
-@relation blood-transfusion
+@relation Blood transfusion dataset
 
 @attribute R numeric
 @attribute F numeric

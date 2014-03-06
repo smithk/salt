@@ -1,6 +1,6 @@
 % 1. Title: Iris Plants Database
 % 
-@RELATION 'HK2.arff'
+@RELATION HK2
 
 @ATTRIBUTE 'feature1' real
 @ATTRIBUTE 'feature2' real
