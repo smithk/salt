@@ -240,7 +240,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             elif type(dist) is LogNormal:
                 param.distribution = LogUniform(lower=np.log(configuration[name]) - hypercube[name] / 2.0,
                                                 upper=np.log(configuration[name]) + hypercube[name] / 2.0)
-        print("hypercube size: {0}".format(hypercube))
+        #print("hypercube size: {0}".format(hypercube))
         if not can_shrink:
             self.reset_hypercube(configuration)
 
