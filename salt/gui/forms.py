@@ -57,11 +57,18 @@ class SaltMain(ttk.Frame):
         self.root = tk.Tk()
         self.root.title("Suggest-a-Learner Toolbox")
         self.root.attributes('-topmost', True)
+        window_width= self.root.winfo_screenwidth()
+        window_height=self.root.winfo_screenheight()
+        window_width = 800
+        window_height = 600
+        self.root.geometry("{0}x{1}".format(int(window_width), int(window_height)))
         ttk.Frame.__init__(self, master)
         self.pack(fill=tk.BOTH, expand=1)
         self.alpha = tk.DoubleVar()
+        self.show_default = tk.BooleanVar()
         self.setup_gui()
         self.alpha.trace("w", self.call_update_chart)
+        self.show_default.trace("w", self.call_update_chart)
 
     def call_update_chart(self, *args):
         if self.dataset_path is not None:
@@ -187,9 +194,11 @@ class SaltMain(ttk.Frame):
         # summary_figure.suptitle('[figure title here] $\\alpha$')
 
         subplot = summary_figure.add_subplot(111)
+        subplot.format_coord = lambda x, y: ''
         subplot.set_ylim([0, 1])
         subplot.xaxis.grid(False)
         pvalue_axis = subplot.twinx()
+        pvalue_axis.format_coord = lambda x, y: ''
         pvalue_axis.set_ylim([0, 1])
         pvalue_axis.xaxis.grid(False)
         self.summary_plot = None
@@ -197,7 +206,7 @@ class SaltMain(ttk.Frame):
 
         plot_canvas.get_tk_widget().pack(side=tk.BOTTOM, fill=tk.BOTH, expand=1)
         plot_canvas._tkcanvas.pack(fill=tk.BOTH, expand=1)
-        plot_toolbar = CustomNavToolbar(plot_canvas, plot_frame, alpha=self.alpha)
+        plot_toolbar = CustomNavToolbar(plot_canvas, plot_frame, alpha_var=self.alpha, show_default_var=self.show_default)
         plot_toolbar.update()
         plot_frame.pack()
         summary_figure.tight_layout()
@@ -344,6 +353,7 @@ class SaltMain(ttk.Frame):
         # control updating only when there are changes
         accept = np.array(pvalues) >= self.alpha.get()
         plot_data = '?'
+        show_defaults = self.show_default.get()
         try:
             #num_learners = len(means)
             #if self.summary_plot is None or num_learners != len(self.summary_plot.get_children()):
@@ -351,33 +361,40 @@ class SaltMain(ttk.Frame):
                 #self.summary_plot = None
                 n = self.xval_repetitions * self.xval_folds
                 self.setup_subplot(title, n)
-                positions = np.arange(len(data)) + 1
-                positions = np.vstack((positions, positions + 0.5))
+                positions = np.arange(1, len(data) + 1)
+                #positions = np.vstack((positions, positions + 0.5))
                 default_data = self.default_results.values()  # [np.array(row) - 0.2 for row in data]
                 default_means = [np.mean(row) for row in default_data]
-                widths = np.hstack([0.5] * len(data) + [0.3] * len(data))
-                plot_data = data + default_data
                 #self.summary_plot = self.subplot.boxplot(plot_data, positions=positions, widths=widths,  patch_artist=True, vert=False)
-                ghostcolor = '#aaaaaa'
-                edgecolor = '#efefef'
-                mediancolor = '#efefef'
-                alpha = 0.4
-                a = self.subplot.boxplot(default_data, positions=positions[0] + 0.5, widths=0.3, patch_artist=True, vert=False, notch=True)
-                plt.setp(a['whiskers'], color=ghostcolor, linestyle='-', alpha=alpha, linewidth=1.2)
-                plt.setp(a['boxes'], color=ghostcolor, edgecolor=edgecolor, alpha=alpha)
-                plt.setp(a['caps'], color=ghostcolor, alpha=alpha, linewidth=1.2)
-                plt.setp(a['fliers'], color=ghostcolor, alpha=alpha, linewidth=1.2, marker='o', markersize=3.2, markeredgecolor=ghostcolor)
-                plt.setp(a['medians'], color=mediancolor, linewidth=1.2, alpha=alpha)
-                self.subplot.axvline(max(means), linestyle=':', color='w', lw=1.2, zorder=0)
-                self.summary_plot = self.subplot.boxplot(data, positions=positions[0], widths=0.5, patch_artist=True, vert=False, notch=True)
+                if show_defaults:
+                    ghostcolor = '#aaaaaa'
+                    edgecolor = '#efefef'
+                    mediancolor = '#efefef'
+                    alpha = 0.4
+                    a = self.subplot.boxplot(default_data, positions=positions + 0.325, widths=0.25, patch_artist=True, vert=False, notch=True)
+                    plt.setp(a['whiskers'], color=ghostcolor, linestyle='-', alpha=alpha, linewidth=1.2)
+                    plt.setp(a['boxes'], color=ghostcolor, edgecolor=edgecolor, alpha=alpha)
+                    plt.setp(a['caps'], color=ghostcolor, alpha=alpha, linewidth=1.2)
+                    plt.setp(a['fliers'], color=ghostcolor, alpha=alpha, linewidth=1.2, marker='o', markersize=3.2, markeredgecolor=ghostcolor)
+                    plt.setp(a['medians'], color=mediancolor, linewidth=1.2, alpha=alpha)
+                    boxplot_width = 0.5
+                #else:
+                boxplot_width = 0.9
+                self.subplot.axvline(max(means), linestyle=':', color='w', lw=1.2, zorder=0)  # Best mean
+                offset = 0
+                if show_defaults:
+                    offset = 0.15
+                    positions = positions - offset
+                self.summary_plot = self.subplot.boxplot(data, positions=positions, widths=boxplot_width - offset * 2, patch_artist=True, vert=False, notch=True)
                 yticks = self.subplot.get_yticks()
                 yticks = np.hstack((yticks, yticks[-1] + 1))[::2]
-                self.subplot.barh(yticks - 0.3, [1.1] * len(yticks), height=1, left=-0.1, color='#cdcdcd', linewidth=0, alpha=0.25, zorder=0)
+                self.subplot.barh(yticks - 0.5 + offset, [1.1] * len(yticks), height=1, left=-0.1, color='#cdcdcd', linewidth=0, alpha=0.25, zorder=0)
                 self.setup_legend()
-                self.subplot.set_ylim([.5, len(data) + 1])
+                self.subplot.set_ylim([0.4, len(data) + 0.6])
                 self.setup_boxplot(names, sizes, pvalues, accept, bestindex)
-                self.plot_means(means)
-                self.plot_means(default_means, vertical_offset=0.5, alpha=0.4, boxheight=0.05)
+                self.plot_means(means, vertical_offset=-offset)
+                if show_defaults:
+                    self.plot_means(default_means, vertical_offset=0.325, alpha=0.4, boxheight=0.05)
                 self.summary_figure.tight_layout(rect=(0, 0.07, 1, 1))
                 #  Significantly different from the best (95% confidence)
             else:
@@ -687,10 +704,12 @@ class SaltMain(ttk.Frame):
 
 class CustomNavToolbar(NavigationToolbar2TkAgg):
     '''Navigation toolbar that includes alpha slider.'''
-    def __init__(self, plot_canvas, plot_window, alpha):
+    def __init__(self, plot_canvas, plot_window, alpha_var, show_default_var):
         NavigationToolbar2TkAgg.__init__(self, plot_canvas, plot_window)
-        self.alpha = alpha
+        self.alpha = alpha_var
+        self.show_default = show_default_var
         self.alpha_slider = self._slider(0.05, 0.9)
+        self.show_default_check = self._check_default()
         self._message_label.pack(side=tk.LEFT)
 
     def _slider(self, lower, upper, default=0.05):
@@ -700,3 +719,8 @@ class CustomNavToolbar(NavigationToolbar2TkAgg):
         slider.pack(side=tk.RIGHT)
         sliderlabel.pack(side=tk.RIGHT)
         return slider
+
+    def _check_default(self):
+        check = tk.Checkbutton(master=self, text="Show default configuration performances", variable=self.show_default)
+        check.pack(side=tk.LEFT)
+        return check
