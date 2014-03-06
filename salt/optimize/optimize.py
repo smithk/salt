@@ -259,7 +259,10 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             except:
                 pass
             for score in self.hypercube_scores[str(signature)].values():
-                self.mean_sorted_score_lists.remove(score)
+                try:
+                    self.mean_sorted_score_lists.remove(score)
+                except:
+                    pass
             del self.hypercube_scores[str(signature)]
             # but keep the references in mean_sorted_score_lists
 
