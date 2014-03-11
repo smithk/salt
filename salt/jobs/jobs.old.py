@@ -4,7 +4,6 @@ asynchronous tasks.
 """
 from multiprocessing import Process
 from ..utils.strings import now
-from dispy import JobCluster
 import os
 
 # TODO To read dataset fragment by cross-validation group and fold id only,
@@ -16,7 +15,7 @@ import os
 
 def run(job, training_set, testing_set, verbose=False):
     '''Run the learning and predicting steps on a given job.
-        This function is passed to the cluster nodes for remote execution
+        This function is passed to the pp nodes for remote execution
     '''
     from salt.utils.strings import now as Now  # Import statements must be included explicitly here
     from time import time
@@ -58,7 +57,7 @@ def write_file(training_set, testing_set, dataset_id, learning_job, default_cach
 
 def run_new(job, dataset_id, verbose=False, default_cache_path='/dev/shm'):
     '''Run the learning and predicting steps on a given job.
-        This function is passed to the cluster nodes for remote execution
+        This function is passed to the pp nodes for remote execution
     '''
     from os.path import join, exists
     import cPickle
@@ -142,16 +141,13 @@ class JobManager(Process):
         super(JobManager, self).__init__(target=self.run)
 
     def run(self):
+        import pp
         print("[Job Manager] Started with pid={0}".format(os.getpid()))
-        #self.cluster = .Server(self.local_cores, ppservers=self.node_list, restart=False, socket_timeout=300)
-        self.ip_address = '192.168.0.21'
-        self.node_list = ['192.168.0.*']
-        self.cluster = JobCluster(run, nodes=self.node_list, ip_addr=self.ip_address,
-                                  reentrant=True, pulse_interval=60, callback=self.notify_status)
+        self.cluster = pp.Server(self.local_cores, ppservers=self.node_list, restart=False, socket_timeout=300)
         #self.jobs = {}
         try:
             message = self.task_queue.get()  # Wait until a message arrives
-            #print(message)
+            print(message)
             while message:  # or len(self.retry_jobs) > 0:
                 #while len(self.retry_jobs) > 0:
                 #    learning_job = self.retry_jobs.pop()
@@ -170,8 +166,7 @@ class JobManager(Process):
                     wait = False
                     if wait:
                         self.cluster.wait()
-                    #self.cluster.destroy()
-                    #self.cluster.close()
+                    self.cluster.destroy()
                     message = None
                     wait = False
                     break
@@ -190,7 +185,7 @@ class JobManager(Process):
                     #self.lock.release()
                 else:
                     print("Abnormal memory consumption. No more tasks will be run.")
-                    self.cluster.wait()
+                    self.cluster.destroy()
                     message = None
         except KeyboardInterrupt:
             print("JobManager failing gracefully")
@@ -201,8 +196,7 @@ class JobManager(Process):
         else:
             print("{0} [Job Manager] [ All jobs finished ]".format(now()))
         print('')
-        print(self.cluster.stats())
-        #self.cluster.print_stats()
+        self.cluster.print_stats()
         return 0
 
     def join(self):
@@ -232,8 +226,7 @@ class JobManager(Process):
                                        fold_id=fold_num)
             try:
                 #job = self.send_job(learning_job, group_id)
-                job = self.cluster.submit(learning_job, fold.training_set, fold.testing_set)
-                #job()
+                job = self.cluster.submit(run, (learning_job, fold.training_set, fold.testing_set), modules=('salt.data',), callback=self.notify_status, group=group_id)
                 #del job
                 #print("{0} [Job Manager]     {1} fold sent ({2}, {3}/{4})".format(now(), learner_name, group_id, fold_num, len(folds)))
                 #self.jobs[(group_id, fold_num)] = job
@@ -267,9 +260,6 @@ class JobManager(Process):
             print("{0} happened!!! o_O".format(sss))
 
     def notify_status(self, learning_job):
-        learning_job = learning_job.result
-        #print(self.cluster.stats())
-        #print('NOTIFYING STATUSSSSSSSSSSSSSSSSSSS', learning_job)
         import gc
         if learning_job is None:
             print("JOB CRASHED!!!")

@@ -3,7 +3,6 @@ The :mod:`salt.gui.forms` module provides an implementation of the forms needed
 for the user to interact with salt on a graphical interface.
 """
 
-import os
 from os.path import join, dirname
 from six import PY3, iteritems
 from six.moves import tkinter as tk, tkinter_tkfiledialog as FileDialog
@@ -15,16 +14,17 @@ import numpy as np
 from datetime import datetime, timedelta
 from ..options import Settings
 import warnings
-with warnings.catch_warnings():
-    # Ignore wanring about location of matplotlib config file
-    warnings.simplefilter("ignore")
-    import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg, NavigationToolbar2TkAgg
 from matplotlib.figure import Figure
 if PY3:
     from tkinter import ttk
 else:
     import ttk
+with warnings.catch_warnings():
+    # Ignore wanring about location of matplotlib config file
+    warnings.simplefilter("ignore")
+    import matplotlib.pyplot as plt
+# References to other SALT packages
 from ..utils.debug import Log
 from ..utils.strings import format_dict
 from ..IO.readers import ArffReader
@@ -156,10 +156,6 @@ class SaltMain(ttk.Frame):
         optimizer_list.pack(side=tk.RIGHT)
         optimizer_label.pack(side=tk.RIGHT)
         statusbar.pack(side=tk.BOTTOM, fill=tk.X, padx=2, pady=2)
-
-    def add_5_min(self):
-        self.finish_at += timedelta(minutes=5)
-        self.command_queue.put(self.finish_at)
 
     def setup_console_frame(self):
         console_frame = ttk.Frame(self)
@@ -434,6 +430,10 @@ class SaltMain(ttk.Frame):
         self.subplot.yaxis.grid(False)
         #self.subplot.set_autoscaley_on(True)
 
+    def add_5_min(self):
+        self.finish_at += timedelta(minutes=5)
+        self.command_queue.put(self.finish_at)
+
     # ===== PLOT HANDLING =====
 
     def plot_means(self, means, vertical_offset=0, alpha=1, boxheight=0.08):
@@ -653,7 +653,7 @@ class SaltMain(ttk.Frame):
     def update_content(self):
         try:
             #while True:
-            if not self.message_queue.empty():
+            while not self.message_queue.empty():
                 message = self.message_queue.get_nowait()
                 if message is None:
                     self.console.config(state=tk.NORMAL)

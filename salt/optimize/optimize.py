@@ -50,6 +50,7 @@ class BaseOptimizer(object):
 
 
 class SequentialOptimizer(BaseOptimizer):
+    '''Explore a finite parameter space sequentially.'''
     def __init__(self, param_space):
         super(SequentialOptimizer, self).__init__(param_space)
         self.parameter_list = list(param_space.get_grid())
@@ -65,9 +66,24 @@ class SequentialOptimizer(BaseOptimizer):
 
 
 class RandomOptimizer(SequentialOptimizer):
+    '''Explore a finite parameter space randomly.'''
     def __init__(self, param_space):
         super(RandomOptimizer, self).__init__(param_space)
         shuffle(self.indices)
+
+
+class DefaultConfigOptimizer(BaseOptimizer):
+    def __init__(self, *args, **kwargs):
+        super(DefaultConfigOptimizer, self).__init__(*args, **kwargs)
+        self.has_run = False
+
+    def get_next_configuration(self):
+        if self.has_run:
+            next_configuration = None
+        else:
+            next_configuration = {}
+            self.has_run = True
+        return next_configuration
 
 
 class KDEOptimizer(BaseOptimizer):
@@ -290,19 +306,4 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             self.configurations.append(next_configuration)
         self.num_configs_tried += 1
         print("now trying {0} ({1} configurations tried)".format(next_configuration, self.num_configs_tried))
-        return next_configuration
-
-
-class DefaultConfigOptimizer(BaseOptimizer):
-    def __init__(self, *args, **kwargs):
-        super(DefaultConfigOptimizer, self).__init__(*args, **kwargs)
-        self.has_run = False
-        pass
-
-    def get_next_configuration(self):
-        if self.has_run:
-            next_configuration = None
-        else:
-            next_configuration = {}
-            self.has_run = True
         return next_configuration
