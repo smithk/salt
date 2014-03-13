@@ -45,7 +45,7 @@ AVAILABLE_CLASSIFIERS = {'LogisticRegressionClassifier': LogisticRegressionClass
                          'DecisionTreeClassifier': DecisionTreeClassifier,
                          'extratree': ExtraTreeClassifier,
                          'RandomForestClassifier': RandomForestClassifier,
-                         'ExtraTreesClassifier': ExtraTreeEnsembleClassifier,
+                         'ExtraTreeEnsembleClassifier': ExtraTreeEnsembleClassifier,
                          'GradientBoostingClassifier': GradientBoostingClassifier,
                          'GaussianProcessClassifier': GaussianProcessClassifier,  # Remove?
                          'SVMClassifier': SVMClassifier,
