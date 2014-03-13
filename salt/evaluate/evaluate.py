@@ -32,6 +32,27 @@ class EvaluationResults(object):
         return self.metrics.score < other.metrics.score
 
 
+class EvaluationResultSet(object):
+    def __init__(self, learner, configuration, evaluations):
+        self.learner = learner
+        self.configuration = configuration
+        self._evaluations = None
+        self._mean = None
+        self._set_evaluations(evaluations)
+
+    def _set_evaluations(self, evaluations):
+        scores = [evaluation.score for evaluation in evaluations]
+        mean = np.mean(scores)
+        self._mean = mean
+        self._evaluations = evaluations
+
+    evaluations = property(lambda self: self._evaluations, _set_evaluations)
+    mean = property(lambda self: self._mean)
+
+    def __lt__(self, other):
+        return self.mean < other.mean
+
+
 def standardize(datapoints, sort=False):
     if isinstance(datapoints, Mapping):
         standardized = {model_name: standardize(model_performance, sort)

@@ -15,6 +15,7 @@ class BaseOptimizer(object):
         self.param_space = param_space
         self.evaluation_results = []
         self.evaluation_parameters = []
+        self.initial_configurations = [{}]  # Try these first
 
     def add_results(self, evaluation_results):
         insort(self.evaluation_results, evaluation_results)
@@ -99,13 +100,16 @@ class KDEOptimizer(BaseOptimizer):
         return not self.numerical_params_exist
 
     def get_next_configuration(self):
-        next_configuration = self.param_space.sample_configuration()
-        while next_configuration in self.configurations:
-            #if self.configurations_exhausted():
-            #    next_configuration = None
-            #    break
+        if len(self.initial_configurations) > 0:
+            next_configuration = self.initial_configurations.pop()
+        else:
             next_configuration = self.param_space.sample_configuration()
-        self.configurations.append(next_configuration)
+            while next_configuration in self.configurations:
+                #if self.configurations_exhausted():
+                #    next_configuration = None
+                #    break
+                next_configuration = self.param_space.sample_configuration()
+            self.configurations.append(next_configuration)
         return next_configuration
 
 

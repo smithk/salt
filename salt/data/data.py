@@ -83,6 +83,20 @@ class Dataset(Bunch):
         return slice_dataset, the_rest_dataset
 
     def get_fold_data(self, repetition, fold):
+        testing_set_data = self.data[self.index_list[repetition][fold]]
+        testing_set_target = self.target[self.index_list[repetition][fold]]
+        testing_set = (testing_set_data, testing_set_target)
+
+        training_set_indices = np.hstack([self.index_list[repetition][i]
+                                          for i in xrange(len(self.index_list[repetition]))
+                                          if i != fold])
+        training_set_data = self.data[training_set_indices]
+        training_set_target = self.target[training_set_indices]
+        training_set = (training_set_data, training_set_target)
+
+        return (testing_set, training_set)
+
+    def get_fold_data_old(self, repetition, fold):
         folds = self.folds
         #if self.index_list[repetition] is None:
         #    self.index_list = self.distribute(folds)
@@ -145,6 +159,25 @@ class Dataset(Bunch):
             index_list = [np.hstack([initial_indices[i], remaining_fold_indices[i]]).astype(int) for i in range(folds)]
 
         return index_list
+
+
+class PredictionSet(object):
+    '''
+    Lightweight class to transfer prediction sets.
+    '''
+    def __init__(self, learner, configuration, repetitions, folds):
+        self.learner = learner
+        self.repetitions = repetitions
+        self.folds = folds
+        self.configuration = configuration
+        self.predictions = [None] * repetitions * folds
+
+    def add(self, prediction, repetition, fold):
+        self.predictions[repetition * self.folds + fold] = prediction
+
+    def get(self, repetition, fold):
+        return self.predictions[repetition * self.folds + fold]
+
 
 if __name__ == '__main__':
     from os import system

@@ -30,8 +30,10 @@ class BaseClassifier(BaseLearner):
     def __init__(self, **parameters):
         self._parameters = None
         self._classifier = None
-        self.training_dataset = None
-        self.predict_dataset = None
+        self.training_data = None
+        self.training_target = None
+        self.training_classes = None
+        self.predict_data = None
         self._update_parameters(parameters)
 
     def _get_classifier(self):
@@ -45,7 +47,6 @@ class BaseClassifier(BaseLearner):
         self._classifier = None  # forces to re-train on next use
         self._parameters = parameters
 
-    #pylint: disable=W0212
     parameters = property(lambda self: self._parameters, _update_parameters)
     classifier = property(lambda self: self._get_classifier())
 
@@ -58,36 +59,33 @@ class BaseClassifier(BaseLearner):
         """
         raise NotImplementedError((self, parameters))
 
-    def train(self, dataset):
-        """Perform the training step on the given dataset.
+    def train(self, data, target):
+        """Perform the training step on the given data.
 
-        :param dataset: Training dataset.
+        :param data: Training data.
+        :param target: Training classes.
         """
-        self.training_dataset = dataset
+        self.training_data = data
+        self.training_target = target
         classifier = self.classifier
-        self.training_classes = np.unique(dataset.target)
-        trained = classifier.fit(dataset.data, dataset.target.astype(int))
+        self.training_classes = np.unique(target).astype(int)
+        trained = classifier.fit(data, target.astype(int))
         return trained
 
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         classifier = self.classifier
-        prediction = classifier.predict_proba(dataset.data)
-        # extended_prediction includes columns for non-observed classes
-        extended_prediction = np.zeros((len(dataset.data), len(dataset.target_names)))
-        prediction_index = 0
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            for i in np.unique(self.training_classes):
-                # TODO fix: Next line throws warning DeprecationWarning: using a
-                # non-integer number instead of an integer
-                # will result in an error in the future
-                extended_prediction[:, i] = prediction[:, prediction_index]
-                prediction_index += 1
+        prediction = classifier.predict_proba(data)
+        # extended_prediction includes zero-filled columns for non-observed
+        # classes. The returned array is sorted (first column corresponds to
+        # class 0 and so on.
+        extended_prediction = np.zeros((len(data), len(self.training_classes)))
+        for index, class_id in enumerate(self.training_classes):
+            extended_prediction[:, class_id] = prediction[:, index]
         return extended_prediction
 
     def get_learner_parameters(self, parameters):
@@ -104,12 +102,13 @@ class BaseClassifier(BaseLearner):
 
 
 class BaselineClassifier(BaseClassifier):
-    def train(self, dataset):
-        self._weights = np.bincount(dataset.target.astype(int),
-                                    minlength=len(dataset.target_names)) / (1.0 * len(dataset.target))
+    def train(self, data, target):
+        self.training_classes = np.unique(target)
+        self._weights = np.bincount(target.astype(int),
+                                    minlength=len(self.training_classes)) / (1. * len(target))
 
-    def predict(self, dataset):
-        return np.repeat([self._weights], len(dataset.data), axis=0)
+    def predict(self, data):
+        return np.repeat([self._weights], len(data), axis=0)
 
 
 class LogisticRegressionClassifier(BaseClassifier):
@@ -202,7 +201,6 @@ class LogisticRegressionClassifier(BaseClassifier):
         learner_parameters = parameters['Classifiers']['LogisticRegressionClassifier']
         param_space = param.ParameterSpace.load(learner_parameters)
         return param_space
-
 
     @classmethod
     def create_parameter_space(self, parameters, optimizer):
@@ -446,18 +444,18 @@ class SGDClassifier(BaseClassifier):
         param_space['random_state'] = random_state_param
         return param_space
 
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
         if self.classifier.loss in ('log', 'modified_huber'):
-            prediction = super(SGDClassifier, self).predict(dataset)
+            prediction = super(SGDClassifier, self).predict(data)
         else:
-            self.predict_dataset = dataset
+            self.predict_data = data
             sgd = self.classifier
-            prediction = sgd.predict(dataset.data)
-            prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+            prediction = sgd.predict(data)
+            prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
 
@@ -583,15 +581,15 @@ class PassiveAggressiveClassifier(BaseClassifier):
         return param_space
 
     #@log_step("Predicting with Passive-aggressive classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         pac = self.classifier
-        prediction = pac.predict(dataset.data)
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = pac.predict(data)
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
 
@@ -608,15 +606,15 @@ class RidgeClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with Ridge classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         ridge = self.classifier
-        prediction = ridge.predict(dataset.data)
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = ridge.predict(data)
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
     @classmethod
@@ -757,15 +755,15 @@ class RidgeCVClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with Ridge classifier (built-in CV)")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         ridgecv = self.classifier
-        prediction = ridgecv.predict(dataset.data)
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = ridgecv.predict(data)
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
     @classmethod
@@ -794,14 +792,14 @@ class GaussianNBClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with Gaussian Naive Bayes classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         gaussian_naive_bayes = self.classifier
-        prediction = gaussian_naive_bayes.predict_proba(dataset.data)
+        prediction = gaussian_naive_bayes.predict_proba(data)
         return prediction
 
     @classmethod
@@ -905,16 +903,16 @@ class KNNClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with Knn classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         knn = self.classifier
         #prediction = knn.predict_proba(dataset.data)
-        prediction = knn.predict(dataset.data)
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = knn.predict(data)
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
     @classmethod
@@ -1077,15 +1075,15 @@ class RadiusNeighborsClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with radius neighbors classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         classifier = self.classifier
-        prediction = classifier.predict(dataset.data)
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = classifier.predict(data)
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
     @classmethod
@@ -1245,15 +1243,15 @@ class NearestCentroidClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with radius neighbors classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         classifier = self.classifier
-        prediction = classifier.predict(dataset.data)
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = classifier.predict(data)
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
     @classmethod
@@ -2166,15 +2164,15 @@ class GaussianProcessClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with Gaussian process classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         classifier = self.classifier
-        prediction = classifier.predict(dataset.data)
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = classifier.predict(data)
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
     @classmethod
@@ -2551,17 +2549,17 @@ class LinearSVMClassifier(BaseClassifier):
         return classifier
 
     #@log_step("Predicting with Linear SVM Classifier")
-    def predict(self, dataset):
-        """Perform the prediction step on the given dataset.
+    def predict(self, data):
+        """Perform the prediction step on the given data.
 
-        :param dataset: Dataset to predict.
+        :param data: numpy array with data to predict.
         """
-        self.predict_dataset = dataset
+        self.predict_data = data
         linear_svc = self.classifier
         # LinearSVC doesn't implement a predict_proba method
-        prediction = linear_svc.predict(dataset.data)
+        prediction = linear_svc.predict(data)
 
-        prediction = array_to_proba(prediction, min_columns=len(dataset.target_names))
+        prediction = array_to_proba(prediction, min_columns=len(self.training_classes))
         return prediction
 
     @classmethod
@@ -2897,10 +2895,10 @@ class LinearDiscriminantClassifier(BaseClassifier):
         classifier = LDA(**parameters)
         return classifier
 
-    def train(self, dataset):
+    def train(self, data, target):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            trained = super(LinearDiscriminantClassifier, self).train(dataset)
+            trained = super(LinearDiscriminantClassifier, self).train(data, target)
             return trained
 
     @classmethod
@@ -2943,10 +2941,10 @@ class LinearDiscriminantClassifier(BaseClassifier):
 class QuadraticDiscriminantClassifier(BaseClassifier):
     """Quadratic discriminant classifier."""
 
-    def train(self, dataset):
+    def train(self, data, target):
         with warnings.catch_warnings():
             warnings.simplefilter("ignore")
-            trained = super(QuadraticDiscriminantClassifier, self).train(dataset)
+            trained = super(QuadraticDiscriminantClassifier, self).train(data, target)
             return trained
 
     def create_classifier(self, **parameters):

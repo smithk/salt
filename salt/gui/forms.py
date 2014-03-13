@@ -30,7 +30,7 @@ from ..utils.strings import format_dict
 from ..IO.readers import ArffReader
 from ..learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS, create_parameter_space
 from ..suggest import SuggestionTaskManager
-from ..evaluate import EvaluationResults
+from ..evaluate import EvaluationResultSet
 from .controls import ToolTip
 from ..evaluate.evaluate import p_stud, get_statistics, format_p_value
 
@@ -314,11 +314,12 @@ class SaltMain(ttk.Frame):
         # Get best configurations for each learner
         configurations = {}
         for result in self.all_results:
-            signature = result.learner + '|' + str(result.parameters)
+            signature = result.learner + '|' + str(result.configuration)
             if signature in configurations:
-                configurations[signature].append(result.metrics.score)
+                configurations[signature] = [evaluation.score for evaluation in result.evaluations]
+                #configurations[signature].append(result.mean)
             else:
-                configurations[signature] = [result.metrics.score]
+                configurations[signature] = [evaluation.score for evaluation in result.evaluations]
         best_configs = {}
         for signature, configuration in iteritems(configurations):
             learner, parameters = signature.split('|')
@@ -446,7 +447,7 @@ class SaltMain(ttk.Frame):
 
     def setup_legend(self):
         '''Create the legend for the summary plot.'''
-        artists = [plt.Line2D((0, 0), (2, 2), linewidth=0,marker=[(0, -.5), (0, .5)], markeredgecolor='k', markeredgewidth=2),
+        artists = [plt.Line2D((0, 0), (2, 2), linewidth=0, marker=[(0, -.5), (0, .5)], markeredgecolor='k', markeredgewidth=2),
                    #           markersize=5, markerfacecolor='w'),
                    plt.Rectangle((0, 0), 1, 1, facecolor='#aaaaaa', edgecolor='#efefef', alpha=0.4),
                    plt.Rectangle((0, 0), 1, 1, facecolor='#b7b7b7'),
@@ -557,6 +558,7 @@ class SaltMain(ttk.Frame):
         default_regressors = None
         optimizer = 'ShrinkingHypercubeOptimizer'
         if classifier_settings:
+            # default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
             default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
                                    if classifier_settings[key].get('enabled', False) in ('True', '$True')]
         if regressor_settings:
@@ -618,29 +620,31 @@ class SaltMain(ttk.Frame):
         i = 0
         for result in learner_results:
             score = float(self.tree_rank.item(result).values()[2][1])
-            if score <= eval_result.metrics.score:
+            if score <= eval_result.mean:
                 break
             i += 1
         if i < top_n:
-            self.tree_rank.insert(learner_node, i, text=eval_result.learner, values=(eval_result.parameters, eval_result.metrics.score))
+            self.tree_rank.insert(learner_node, i, text=eval_result.learner, values=(eval_result.configuration, eval_result.mean))
             if len(learner_results) == top_n:
                 self.tree_rank.delete(learner_results[top_n - 1])
         global_results = self.tree_rank.get_children(self.tree_global_rank)
         i = 0
         for result in global_results:
             score = float(self.tree_rank.item(result).values()[2][1])
-            if score <= eval_result.metrics.score:
+            if score <= eval_result.mean:
                 break
             i += 1
         if i < top_n:
-            self.tree_rank.insert(self.tree_global_rank, i, text=eval_result.learner, values=(eval_result.parameters, eval_result.metrics.score))
+            self.tree_rank.insert(self.tree_global_rank, i, text=eval_result.learner, values=(eval_result.configuration, eval_result.mean))
             if len(global_results) == top_n:
                 self.tree_rank.delete(global_results[top_n - 1])
-        if eval_result.parameters == {}:
+        if eval_result.configuration == {}:
             if eval_result.learner in self.default_results:
-                self.default_results[eval_result.learner].append(eval_result.metrics.score)
+                self.default_results[eval_result.learner] = [evaluation.score for evaluation in eval_result.evaluations]
+                #self.default_results[eval_result.learner].append(eval_result.mean)
             else:
-                self.default_results[eval_result.learner] = [eval_result.metrics.score]
+                self.default_results[eval_result.learner] = [evaluation.score for evaluation in eval_result.evaluations]
+                #self.default_results[eval_result.learner] = [eval_result.mean]
                 ordering = np.argsort(self.default_results.keys())
                 keys = np.array(self.default_results.keys())[ordering].tolist()
                 values = np.array(self.default_results.values())[ordering].tolist()
@@ -662,14 +666,14 @@ class SaltMain(ttk.Frame):
                     if type(message) is str:
                         self.console.config(state=tk.NORMAL)
                         self.console.insert(ttk.Tkinter.END, message)
-                    elif type(message) is EvaluationResults:
+                    elif type(message) is EvaluationResultSet:
                         self.add_result(message)
                         if self.process_state == 'STOPPED':
                             self.update_chart()
-                        #self.tree_rank.insert(self.tree_global_rank, tk.END, text=message.learner, values=(message.parameters, message.metrics.score))
+                        #self.tree_rank.insert(self.tree_global_rank, tk.END, text=message.learner, values=(message.parameters, message.mean))
                         #if message.learner not in self.learner_ranks:
                         #    self.learner_ranks[message.learner] = self.tree_rank.insert('', tk.END, text=message.learner)
-                        #self.tree_rank.insert(self.learner_ranks[message.learner], tk.END, text=message.learner, values=(message.parameters, message.metrics.score))
+                        #self.tree_rank.insert(self.learner_ranks[message.learner], tk.END, text=message.learner, values=(message.parameters, message.mean))
                     elif type(message) is int:
                         if message == 1:
                             self.stop_processing()
@@ -706,7 +710,7 @@ class SaltMain(ttk.Frame):
         all_results = sorted(itertools.chain.from_iterable(ranking.values()), reverse=True)
         print("\nGlobal ranking:")
         for result in all_results:
-            print(string_template.format(score=result.metrics.score,
+            print(string_template.format(score=result.mean,
                                          learner=result.learner,
                                          parameters=result.parameters))
 
@@ -714,7 +718,7 @@ class SaltMain(ttk.Frame):
         for learner in ranking.keys():
             print("- {learner}:".format(learner=learner))
             for result in ranking[learner]:
-                print(string_template.format(score=result.metrics.score,
+                print(string_template.format(score=result.mean,
                                              learner=learner,
                                              parameters=result.parameters))
 

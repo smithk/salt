@@ -4,7 +4,10 @@ asynchronous tasks.
 """
 from multiprocessing import Process
 from ..utils.strings import now
-from dispy import JobCluster
+from ..data import PredictionSet
+from six import iteritems
+from dispy import JobCluster, DispyJob
+from collections import Mapping
 import os
 
 # TODO To read dataset fragment by cross-validation group and fold id only,
@@ -14,27 +17,28 @@ import os
 # marshal.load(file(path))
 
 
-def run(job, training_set, testing_set, verbose=False):
+def run(job, training_set, training_target, testing_set, verbose=False):
     '''Run the learning and predicting steps on a given job.
         This function is passed to the cluster nodes for remote execution
     '''
     from salt.utils.strings import now as Now  # Import statements must be included explicitly here
+    from salt.learn import AVAILABLE_CLASSIFIERS
     from time import time
     try:
         time_0 = time()
-        learner = job.learner(**job.parameters)
+        learner = AVAILABLE_CLASSIFIERS[job.learner](**job.configuration)
         if verbose:
-            print("training {1},{2} learner with parameters {0}".format(job.parameters, job.group_id, job.fold_id))
-        learner.train(training_set)
+            print("training {1},{2} learner with parameters {0}".format(job.parameters, job.group_id, job.fold))
+        learner.train(training_set, training_target)
         if verbose:
-            print("predicting {1},{2} learner with parameters {0}".format(job.parameters, job.group_id, job.fold_id))
+            print("predicting {1},{2} learner with parameters {0}".format(job.parameters, job.group_id, job.fold))
         prediction = learner.predict(testing_set)
         time_f = time()
         job.runtime = time_f - time_0
         job.prediction = prediction
     except Exception as e:
         if verbose:
-            print("{0} [{1} fold] Exception: {2} {3}".format(Now(), job.learner.__name__, e, job.parameters))
+            print("{0} [{1} fold] Exception: {2} {3}".format(Now(), job.learner, e, job.parameters))
         job.exception = e
     except KeyboardInterrupt:
         print("Keyboard interruption detected. Task failing gracefully")
@@ -99,7 +103,7 @@ def run_new(job, dataset_id, verbose=False, default_cache_path='/dev/shm'):
     except Exception as e:
         if verbose:
             timestamp = time.strftime("<%T>")
-            print("{0} [{1} fold] Exception: {2} {3}".format(timestamp, job.learner.__name__, e, job.parameters))
+            print("{0} [{1} fold] Exception: {2} {3}".format(timestamp, job.learner, e, job.parameters))
         job.exception = e
     except KeyboardInterrupt:
         print("Keyboard interruption detected. Task failing gracefully")
@@ -108,19 +112,17 @@ def run_new(job, dataset_id, verbose=False, default_cache_path='/dev/shm'):
 
 class LearningJob(object):
     '''Structure to be passed to the remote task, with information about one fold.'''
-    def __init__(self, learner, parameters, group_id, repetition, fold_id):
+    def __init__(self, learner, configuration, repetition, fold):
     #def __init__(self, learner, parameters, training_set, testing_set, group_id, fold_id):
         self.learner = learner
-        self.parameters = parameters
-        #self.training_set = training_set
-        #self.testing_set = testing_set
-        self.prediction = None  # To be filled in by the learner
-        self.group_id = group_id  # TODO Read remotely the required data
+        self.configuration = configuration
         self.repetition = repetition
-        self.fold_id = fold_id
-        self.finished = False
+        self.fold = fold
+
+        # To be filled in by the learner
+        self.prediction = None
+        self.runtime = None
         self.exception = None
-        self.runtime = 0
 
 
 class JobManager(Process):
@@ -139,110 +141,170 @@ class JobManager(Process):
         self.local_cores = local_cores if type(local_cores) is int else 'autodetect'
         self.dataset = dataset
         #self.retry_jobs = []
+
+        self.active_jobs = {}
+        self.active_configurations = {}
+
         super(JobManager, self).__init__(target=self.run)
 
-    def run(self):
+    def get_used_memory(self):
+        import psutil
+        proc = psutil.Process(os.getpid())
+        return proc.get_memory_percent()
+
+    def run(self, wait=False):
+        '''
+        Listen to messages and send jobs.
+
+        Parameters
+        ----------
+            wait : bool, optional
+                   Wait for all jobs to finish before closing the JobManager.
+        '''
         print("[Job Manager] Started with pid={0}".format(os.getpid()))
-        #self.cluster = .Server(self.local_cores, ppservers=self.node_list, restart=False, socket_timeout=300)
         self.ip_address = '192.168.0.21'
         self.node_list = ['192.168.0.*']
         self.cluster = JobCluster(run, nodes=self.node_list, ip_addr=self.ip_address,
                                   reentrant=True, pulse_interval=60, callback=self.notify_status)
-        #self.jobs = {}
         try:
             message = self.task_queue.get()  # Wait until a message arrives
-            #print(message)
-            while message:  # or len(self.retry_jobs) > 0:
-                #while len(self.retry_jobs) > 0:
-                #    learning_job = self.retry_jobs.pop()
-                #    self.send_job(learning_job, 0)
-                if type(message) is tuple:
-                    task_name, task_signal = message
-                    if task_signal == 'Finished':
-                        self.cluster.wait()
-                        pass
-                    #    self.finished[task_name] = True
-                    #if all(self.finished.values()):
-                    #    message = None  #
-                    #    break
-                elif type(message) is str:
+            while message:
+                if type(message) is str:
                     print("JOB MANAGER SHUTTING DOWN")  # Doesn't work all the time
-                    wait = False
                     if wait:
                         self.cluster.wait()
-                    #self.cluster.destroy()
-                    #self.cluster.close()
+                    else:
+                        for learner, job_list in iteritems(self.active_jobs):
+                            for configuration, jobs in iteritems(job_list):
+                                for job in jobs:
+                                    if type(job) is DispyJob:
+                                        if job.status in (DispyJob.Created, DispyJob.Running):
+                                            self.cluster.cancel(job)
                     message = None
-                    wait = False
-                    break
-                else:
-                    self.load_jobs(message)  # Message is an actual task
-                    #s = self.cluster.get_stats()
-                    #print([t.rworker.__dict__ for t in s.values()])
-                import psutil
-                proc = psutil.Process(os.getpid())
-                memory_percent = proc.get_memory_percent()
-                #print("{0:.2f}% memory used".format(memory_percent))
+                elif type(message) is tuple:
+                    learner, message_body = message
+                    if isinstance(message_body, Mapping):
+                        self.load_jobs(*message)  # Message is an actual task (learner, config)
+                    else:
+                        if message_body == 'Finished':
+                            pass
+
+                memory_percent = self.get_used_memory()  # TODO Do this less often
                 if memory_percent < 60:
-                    #self.lock.acquire()
-                    message = self.task_queue.get()
-                    #print("processing {0}".format(message))
-                    #self.lock.release()
+                    message = self.task_queue.get()  # Continue accepting messages
                 else:
+                    # TODO Free memory instead of stop
                     print("Abnormal memory consumption. No more tasks will be run.")
                     self.cluster.wait()
                     message = None
         except KeyboardInterrupt:
-            print("JobManager failing gracefully")
+            print("Ctrl+C detected. JobManager failing gracefully (?)")
 
-        if self.console_queue:
+        if self.console_queue is not None:
             self.console_queue.put("{0} [Job Manager] [ All jobs finished ]\n".format(now()))
-            self.console_queue.put(1)  # TODO: Change end signal
+            self.console_queue.put(1)  # TODO: Change end signal and don't send text
         else:
             print("{0} [Job Manager] [ All jobs finished ]".format(now()))
-        print('')
+        self.cluster.close()
         print(self.cluster.stats())
-        #self.cluster.print_stats()
         return 0
 
     def join(self):
         print("[Job Manager] [Exiting...]")
         super(JobManager, self).join()
 
-    def load_jobs(self, cross_validation_group):
-        learner_name = cross_validation_group.learner.__name__
-        self.finished[learner_name] = False
-        if not learner_name in self.job_groups:
-            self.job_groups[learner_name] = {}
-
-        folds = cross_validation_group.create_folds()
-        group_id = id(cross_validation_group)
-        self.job_groups[learner_name][group_id] = cross_validation_group
-        fold_num = 1
-        #print("{0} [Job Manager] Submitting {1}".format(now(), cross_validation_group))
-        if self.console_queue:
-            self.console_queue.put("{0} [Job Manager] Submitting {1}\n".format(now(), cross_validation_group))
+    def load_jobs(self, learner, configuration):
+        message = "{0} [Job Manager] Submitting {1}:{2}".format(now(), learner, configuration)
+        if self.console_queue is not None:
+            self.console_queue.put(message)
         else:
-            print("{0} [Job Manager] Submitting {1}".format(now(), cross_validation_group))
-        for fold in folds:
-            learning_job = LearningJob(fold.learner, fold.parameters,
-                                       #fold.training_set, fold.testing_set,
-                                       group_id=group_id,
-                                       repetition=cross_validation_group.repetition,
-                                       fold_id=fold_num)
-            try:
-                #job = self.send_job(learning_job, group_id)
-                job = self.cluster.submit(learning_job, fold.training_set, fold.testing_set)
-                #job()
-                #del job
-                #print("{0} [Job Manager]     {1} fold sent ({2}, {3}/{4})".format(now(), learner_name, group_id, fold_num, len(folds)))
-                #self.jobs[(group_id, fold_num)] = job
-                #import sys
-                #print("len {0}".format([sys.getsizeof(group) for group in self.job_groups.values()]))
-            except Exception as e:
-                print("[Job Manager] [Exception] {0}".format(e))
-            fold_num += 1
+            print(message)
+        # Create prediction set
+        prediction_set = PredictionSet(learner, configuration,
+                                       self.dataset.repetitions, self.dataset.folds)
+        learner_prediction = self.active_configurations.get(learner)
+        if learner_prediction is None:
+            learner_prediction = {}
+            self.active_configurations[learner] = learner_prediction
+        learner_prediction[self._key(configuration)] = prediction_set
 
+        # Create active job list
+        active_learner_jobs = self.active_jobs.get(learner)
+        if active_learner_jobs is None:
+            active_learner_jobs = {}
+            self.active_jobs[learner] = active_learner_jobs
+        active_configuration_jobs = []
+        active_learner_jobs[self._key(configuration)] = active_configuration_jobs
+
+        success_sending_jobs = True
+
+        for repetition in xrange(self.dataset.repetitions):
+            for fold in xrange(self.dataset.folds):
+                learning_job = LearningJob(learner, configuration, repetition, fold)
+                testing_set, training_set = self.dataset.get_fold_data(repetition, fold)
+                training_data, training_labels = training_set
+                testing_data, testing_labels = testing_set
+                try:
+                    job = self.cluster.submit(learning_job, training_data, training_labels, testing_data)
+                    active_configuration_jobs.append(job)
+                except Exception as e:
+                    success_sending_jobs = False
+                    print("[Job Manager] [Exception sending jobs] {0}".format(e))
+        if not success_sending_jobs:
+            print("couldn't send jobs")
+            # Terminate active jobs for the current configuration, if any
+            for active_job in active_configuration_jobs:
+                self.cluster.cancel(active_job)
+            del active_learner_jobs[self._key(configuration)]
+            # Remove pending predictions
+            del learner_prediction[self._key(configuration)]
+
+    def _key(self, dictionary):
+        return repr(sorted(dictionary.items()))
+
+    def notify_status(self, cluster_job):
+        self.lock.acquire()
+        learning_job = cluster_job.result
+        try:
+            if learning_job is not None:  # TODO Also check for exception in cluster_job
+                exception = learning_job.exception
+                learner = learning_job.learner
+                configuration = learning_job.configuration
+                repetition = learning_job.repetition
+                fold = learning_job.fold
+                prediction = learning_job.prediction
+
+                # TODO Test if notify_status happens on canceled jobs.
+                active_learner_configurations = self.active_configurations[learner]
+                prediction_set = active_learner_configurations[self._key(configuration)]
+
+                if exception is not None:
+                    if isinstance(exception, Exception):
+                        print("exception in {1}: {0}".format(exception, learner))
+                        prediction_set.add(exception, repetition, fold)
+                    else:  # TODO Repair data sending. It doesn't currently work
+                        print("data not found, sending data for {0}, {1}".format(repetition, fold))
+                        ip_address = exception
+                        self.send_data(ip_address, learning_job)
+                        exception = None
+                else:
+                    prediction_set.add(prediction, repetition, fold)
+                if all(prediction is not None for prediction in prediction_set.predictions):
+                    result_queue = self.queues[learner]
+                    result_queue.put(prediction_set)
+                    del self.active_configurations[learner][self._key(configuration)]
+                    del self.active_jobs[learner][self._key(configuration)]
+                else:
+                    pass
+            else:
+                if cluster_job.exception is not None:
+                    print("Job crashed: {0}".format(cluster_job.exception))
+        except Exception as e:
+            print("Something is not right: {0}, {1}".format(e, type(e)))
+        finally:
+            self.lock.release()
+
+    '''
     def send_job(self, learning_job, group_id='default'):
         job = self.cluster.submit(run_new, (learning_job, id(self.dataset)), modules=('salt.data',), callback=self.notify_status, group=group_id)
         return job
@@ -265,43 +327,4 @@ class JobManager(Process):
             print("data sent to {0}".format(ip_address))
         except Exception as sss:
             print("{0} happened!!! o_O".format(sss))
-
-    def notify_status(self, learning_job):
-        learning_job = learning_job.result
-        #print(self.cluster.stats())
-        #print('NOTIFYING STATUSSSSSSSSSSSSSSSSSSS', learning_job)
-        import gc
-        if learning_job is None:
-            print("JOB CRASHED!!!")
-        else:
-            learner_name = learning_job.learner.__name__
-            cross_validation_group = self.job_groups[learner_name][learning_job.group_id]
-            cross_validation_group.runtime = learning_job.runtime
-            if learning_job.exception is not None:
-                if isinstance(learning_job.exception, Exception):
-                    print("exception in {1}: {0}".format(learning_job.exception, learning_job.learner.__name__))
-                    cross_validation_group.fold_labels[learning_job.fold_id - 1] = learning_job.exception
-                else:
-                    print("data not found, sending data for {0}, {1}".format(learning_job.repetition, learning_job.fold_id))
-                    ip_address = learning_job.exception
-                    self.send_data(ip_address, learning_job)
-                    learning_job.exception = None
-            else:
-                cross_validation_group.fold_labels[learning_job.fold_id - 1] = learning_job.prediction
-            if all(labels is not None for labels in cross_validation_group.fold_labels):
-                result_queue = self.queues[learner_name]
-                #print("sending result for {0}".format(cross_validation_group.parameters))
-                result_queue.put(cross_validation_group)
-                #del self.job_groups[learner_name][learning_job.group_id]
-                #del cross_validation_group
-                #print("result sent")
-                if self.finished[learner_name]:  # finished sending new jobs
-                    all_jobs_finished = all(labels is not None for job in self.job_groups[learner_name].values() for labels in job.fold_labels)
-                    if all_jobs_finished:
-                        #print("{0} [Job Manager] [ All jobs for {1} have finished. Sending poison pill ]".format(now(), learner_name))
-                        self.console_queue.put("{0} [Job Manager] [ All jobs for {1} have finished. Sending poison pill ]\n".format(now(), learner_name))
-                        result_queue.put(None)
-            learning_job.prediction = None
-        #del learning_job
-                #self.job_groups[learner_name][learning_job.group_id].dataset.DATA = None
-        gc.collect()
+    '''
