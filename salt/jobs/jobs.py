@@ -170,7 +170,7 @@ class JobManager(Process):
                         'ping_interval': 1,
                         'poll_interval': 5,
                         'reentrant': True,
-                        'ip_addr': self.ip_addr,
+                        #'ip_addr': self.ip_addr,
                         #'loglevel': logging.DEBUG,
                         'callback': self.notify_status}
         self.cluster = JobCluster(run, **cluster_args)
