@@ -38,16 +38,18 @@ class EvaluationResultSet(object):
         self.configuration = configuration
         self._evaluations = None
         self._mean = None
+        self._scores = None
         self._set_evaluations(evaluations)
 
     def _set_evaluations(self, evaluations):
-        scores = [evaluation.score for evaluation in evaluations]
-        mean = np.mean(scores)
+        self._scores = [evaluation.score for evaluation in evaluations]
+        mean = np.mean(self._scores)
         self._mean = mean
         self._evaluations = evaluations
 
     evaluations = property(lambda self: self._evaluations, _set_evaluations)
     mean = property(lambda self: self._mean)
+    scores = property(lambda self: self._scores)
 
     def __lt__(self, other):
         return self.mean < other.mean

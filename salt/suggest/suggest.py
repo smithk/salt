@@ -159,7 +159,7 @@ class SuggestionTask(Process):
                     configuration = None
                 else:
                     import time
-                    time.sleep(0.5)
+                    time.sleep(2)
                     configuration = self.optimizer.get_next_configuration()
         except KeyboardInterrupt:
             print("Ctrl+C detected. {0} task shutting down...".format(self.learner))

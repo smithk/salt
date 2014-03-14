@@ -84,7 +84,7 @@ class Settings(object):
         classifier_options['NearestCentroidClassifier'] = centroid_classif_options
         classifier_options['DecisionTreeClassifier'] = tree_classif_options
         classifier_options['RandomForestClassifier'] = random_forest_classif_options
-        classifier_options['ExtraTreesClassifier'] = extra_trees_classif_options
+        classifier_options['ExtraTreeEnsembleClassifier'] = extra_trees_classif_options
         classifier_options['GradientBoostingClassifier'] = grad_boost_classif_options
         '''
         classifier_options['GaussianProcessClassifier'] = gaussian_proc_classif_options

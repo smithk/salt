@@ -1845,7 +1845,7 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
     @classmethod
     def create_parameter_space(self, parameters, optimizer):
         # Read learner settings to build priors
-        learner_parameters = parameters['Classifiers']['ExtraTreesClassifier'][optimizer]
+        learner_parameters = parameters['Classifiers']['ExtraTreeEnsembleClassifier'][optimizer]
 
         # Build priors
         n_estimators_prior = Distribution.load(learner_parameters['n_estimators'], category_type='int')
@@ -1900,7 +1900,7 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
     @classmethod
     def create_param_space(self, parameters):
         from ..parameters import param
-        learner_parameters = parameters['Classifiers']['ExtraTreesClassifier']
+        learner_parameters = parameters['Classifiers']['ExtraTreeEnsembleClassifier']
         param_space = param.ParameterSpace.load(learner_parameters)
         return param_space
 

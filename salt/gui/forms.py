@@ -8,6 +8,7 @@ from six import PY3, iteritems
 from six.moves import tkinter as tk, tkinter_tkfiledialog as FileDialog
 from multiprocessing import Queue, Lock
 from Queue import Empty as EmptyQueue
+import threading
 from collections import OrderedDict
 import itertools
 import numpy as np
@@ -40,7 +41,7 @@ class SaltMain(ttk.Frame):
     def __init__(self, options, master=None):
         # Initialize global variables
         self.options = options
-        self.all_results = []
+        self.all_results = {}
         self.default_results = {}
         self.lock = Lock()
         self.dataset_path = None
@@ -51,6 +52,7 @@ class SaltMain(ttk.Frame):
         self.command_queue = Queue()  # Sends commands to tasks
         self.process_state = 'STOPPED'
         self.update_plot_required = False
+        self.updating_plot = False
         self.max_results = 10
 
         # Initialize main window
@@ -184,6 +186,7 @@ class SaltMain(ttk.Frame):
         tree_rank.heading(1, text="Score")
         self.tree_global_rank = tree_rank.insert('', 1, text="Global ranking")
         self.learner_ranks = {}
+        self.learner_best = {}
         ranking_scroll = ttk.Scrollbar(ranking_frame)
         ranking_scroll.pack(side=tk.RIGHT, fill=tk.Y)
         ranking_scroll.config(command=tree_rank.yview)
@@ -310,7 +313,7 @@ class SaltMain(ttk.Frame):
         self.btn_run.configure(image=self.run_image)
         self.btn_stop.configure(state=tk.DISABLED)
 
-    def get_data_to_analyze(self):
+    def get_data_to_analyze_(self):
         # Get best configurations for each learner
         configurations = {}
         for result in self.all_results:
@@ -321,6 +324,7 @@ class SaltMain(ttk.Frame):
             else:
                 configurations[signature] = [evaluation.score for evaluation in result.evaluations]
         best_configs = {}
+        num_configs = {}
         for signature, configuration in iteritems(configurations):
             learner, parameters = signature.split('|')
             config_mean = np.mean(configuration)
@@ -329,35 +333,56 @@ class SaltMain(ttk.Frame):
                     best_configs[learner] = configuration
             else:
                 best_configs[learner] = configuration
-        return best_configs
+            if learner in num_configs:
+                num_configs[learner] += 1
+            else:
+                num_configs[learner] = 1
+        return best_configs, num_configs
+
+    def get_data_to_analyze(self):
+        best_configs = self.learner_best
+        num_configs = {learner: len(self.all_results[learner]) for learner in best_configs.keys()}
+        num_configs = OrderedDict(sorted(num_configs.items()))
+        return best_configs, num_configs
 
     def update_chart(self):
-        data = self.get_data_to_analyze()
-        #if len(data) <= 1:  # TODO Handle the case one learner
-        #    return
-        means = np.array([np.mean(model) for model in data.values()])
-        ordering = np.argsort(data.keys())
-        # Store data sorted by name
-        means = means[ordering]
-        data = OrderedDict(zip(np.array(data.keys())[ordering], np.array(data.values())[ordering]))
-        k = len(means)
-        sizes = [len(model) for model in data.values()]
-        df = np.max(sizes) - 1
-        pvalues = []
-        if k >= 2 and df > 3:
-            #qs = tukey(data.values())
-            qs = get_statistics(data.values())
-            pvalues = [np.round(p_stud(q, k, df), 4) for q in qs]
-        #print(data, best_index, data.values()[best_index], np.mean(data.values()[best_index]), means)
-        stats = {'means': means,
-                 'pvalues': pvalues,
-                 'data': data.values(),
-                 'names': data.keys(),
-                 'sizes': sizes
-                 }
-        title = self.dataset_name
-        self.display_data(title, stats)
-        self.update_plot_required = False
+        if self.updating_plot:
+            return
+        self.updating_plot = True
+        try:
+            self.update_plot_required = False
+            data, num_configs = self.get_data_to_analyze()
+            #if len(data) <= 1:  # TODO Handle the case one learner
+            #    return
+            means = np.array([model.mean for model in data.values()])
+            ordering = np.argsort(data.keys())
+            # Store data sorted by name
+            means = means[ordering]
+            #data = OrderedDict(zip(np.array(data.keys())[ordering], np.array(data.values())[ordering]))
+            k = len(means)
+            sizes = num_configs.values()  # [len(model) for model in data.values()]
+            #num_config_ordering = np.argsort(num_configs.keys())
+            #sizes = np.array(num_configs.values())[num_config_ordering]
+            #df = np.max(sizes) - 1
+            df = self.xval_repetitions * self.xval_folds - 1
+            pvalues = []
+            if k >= 2 and df > 3:
+                #qs = tukey(data.values())
+                qs = get_statistics([model.scores for model in data.values()])
+                pvalues = [np.round(p_stud(q, k, df), 4) for q in qs]
+            #print(data, best_index, data.values()[best_index], np.mean(data.values()[best_index]), means)
+            stats = {'means': means,
+                     'pvalues': pvalues,
+                     'data': [result_set.scores for result_set in data.values()],
+                     'names': data.keys(),
+                     'sizes': sizes
+                     }
+            title = self.dataset_name
+            self.display_data(title, stats)
+        except:
+            pass
+        finally:
+            self.updating_plot = False
 
     def display_chart(self, title, data, means, accept, names, pvalues, sizes, bestindex):
         # control updating only when there are changes
@@ -395,7 +420,10 @@ class SaltMain(ttk.Frame):
                 if show_defaults:
                     offset = 0.15
                     positions = positions - offset
-                self.summary_plot = self.subplot.boxplot(data, positions=positions, widths=boxplot_width - offset * 2, patch_artist=True, vert=False, notch=True)
+                self.summary_plot = self.subplot.boxplot(data, positions=positions,
+                                                         widths=boxplot_width - offset * 2,
+                                                         patch_artist=True, vert=False,
+                                                         notch=True)
                 yticks = self.subplot.get_yticks()
                 yticks = np.hstack((yticks, yticks[-1] + 1))[::2]
                 self.subplot.barh(yticks - 0.5 + offset, [1.1] * len(yticks), height=1, left=-0.1, color='#cdcdcd', linewidth=0, alpha=0.25, zorder=0)
@@ -522,7 +550,7 @@ class SaltMain(ttk.Frame):
 
     def process_file(self):
         self.reset_tree()
-        self.all_results = []
+        self.all_results = {}
         self.default_results = {}
         Log.write("Running [SALT] in gui mode with options\n"
                   "{options}".format(options=format_dict(self.options)))
@@ -589,10 +617,16 @@ class SaltMain(ttk.Frame):
                                                         node_list=nodes, optimizer=optimizer,
                                                         max_jobs=max_jobs)
         self.summary_plot = None
-        suggestion_task_manager.run_tasks(wait=False)
         # Start processes
-        self.update_content()
+        self.suggestion_task_manager = suggestion_task_manager
+        #suggestion_task_manager.run_tasks(wait=False)
+        self.thread1 = threading.Thread(target=self.worker)
+        self.thread1.start()
+        #self.update_content()
         self.update_clock()
+
+    def worker(self):
+        self.suggestion_task_manager.run_tasks(wait=False)
 
     def reset_tree(self):
         for learner in self.learner_ranks.values():
@@ -600,6 +634,7 @@ class SaltMain(ttk.Frame):
         self.tree_rank.delete(self.tree_global_rank)
         self.tree_global_rank = self.tree_rank.insert('', 1, text="Global ranking")
         self.learner_ranks = {}
+        self.learner_best = {}
 
     def add_result(self, eval_result):
         #self.lock.acquire()
@@ -638,26 +673,54 @@ class SaltMain(ttk.Frame):
             self.tree_rank.insert(self.tree_global_rank, i, text=eval_result.learner, values=(eval_result.configuration, eval_result.mean))
             if len(global_results) == top_n:
                 self.tree_rank.delete(global_results[top_n - 1])
-        if eval_result.configuration == {}:
-            if eval_result.learner in self.default_results:
-                self.default_results[eval_result.learner] = [evaluation.score for evaluation in eval_result.evaluations]
-                #self.default_results[eval_result.learner].append(eval_result.mean)
-            else:
-                self.default_results[eval_result.learner] = [evaluation.score for evaluation in eval_result.evaluations]
-                #self.default_results[eval_result.learner] = [eval_result.mean]
-                ordering = np.argsort(self.default_results.keys())
-                keys = np.array(self.default_results.keys())[ordering].tolist()
-                values = np.array(self.default_results.values())[ordering].tolist()
-                self.default_results = OrderedDict(zip(keys, values))
-        #else:
-        self.all_results.append(eval_result)
+        if eval_result.configuration == {}:  # Default configuration
+            self.default_results[eval_result.learner] = \
+                [evaluation.score for evaluation in eval_result.evaluations]
+            ordering = np.argsort(self.default_results.keys())
+            keys = np.array(self.default_results.keys())[ordering].tolist()
+            values = np.array(self.default_results.values())[ordering].tolist()
+            self.default_results = OrderedDict(zip(keys, values))
+        #self.all_results.append(eval_result)
+        learner_results = self.all_results.get(eval_result.learner)
+        if learner_results is None:
+            learner_results = [eval_result]
+            self.all_results[eval_result.learner] = learner_results
+        else:
+            learner_results.append(eval_result)
+
         #self.lock.release()
-        self.update_plot_required = True
+        learner_best = self.learner_best.get(eval_result.learner)
+        if learner_best is None:
+            learner_best = eval_result
+            self.learner_best[eval_result.learner] = learner_best
+            self.learner_best = OrderedDict(sorted(self.learner_best.items()))
+            self.update_plot_required = True
+        else:
+            if eval_result > learner_best:
+                self.learner_best[eval_result.learner] = eval_result
+                self.update_plot_required = True
+            else:
+                # Update axis only
+                if self.show_n.get():
+                    self.update_axis()
+
+    def update_axis(self):
+        if self.subplot is None:
+            return
+        sizes = [len(result) for result in self.all_results.values()]
+        names = self.all_results.keys()
+        if self.show_n.get():
+            names = ["{0} ({1})".format(name[:-len("Classifier")], sizes[i]) for i, name in enumerate(names)]
+        else:
+            names = [name[:-len("Classifier")] for name in names]
+
+        self.subplot.set_yticklabels(names, size=7)
 
     def update_content(self):
         try:
             #while True:
             while not self.message_queue.empty():
+                print("processing incoming messages")
                 message = self.message_queue.get_nowait()
                 if message is None:
                     self.console.config(state=tk.NORMAL)
@@ -688,7 +751,7 @@ class SaltMain(ttk.Frame):
                 #self.config(state=tk.DISABLED)
         except EmptyQueue:
             pass
-        self.after(10, self.update_content)
+        self.after(2000, self.update_content)
 
     def update_clock(self):
         try:
@@ -696,12 +759,24 @@ class SaltMain(ttk.Frame):
                 timediff = self.finish_at - datetime.now()
                 if timediff.total_seconds() >= 0:
                     timetext = "{0:02d}:{1:02d}:{2:02d}".format(timediff.seconds / 3600, timediff.seconds / 60 - timediff.seconds / 3600 * 60, timediff.seconds % 60)
-                    self.status_msg.set(timetext)
+                    old_timetext = self.status_msg.get()
+                    if old_timetext != timetext:
+                        self.status_msg.set(timetext)
+                #if self.update_plot_required:
+                #    self.update_chart()
+            if self.message_queue.empty():
                 if self.update_plot_required:
+                    print("new best found last time. updating plot")
                     self.update_chart()
+                    self.update_plot_required = False
+            else:
+                while not self.message_queue.empty():
+                    message = self.message_queue.get_nowait()
+                    if type(message) is EvaluationResultSet:
+                        self.add_result(message)
         except:
             pass
-        self.after(10, self.update_clock)
+        self.after(200, self.update_clock)
 
     def report_results(self, ranking):
         '''Print to the stdout the results of the optimization.'''
@@ -746,7 +821,7 @@ class CustomNavToolbar(NavigationToolbar2TkAgg):
         return slider
 
     def _check_show_n(self):
-        check = tk.Checkbutton(master=self.check_container, text="Show number of samples per box", variable=self.show_n)
+        check = tk.Checkbutton(master=self.check_container, text="Show number of configurations analyzed", variable=self.show_n)
         check.pack(side=tk.LEFT)
         return check
 
