@@ -304,6 +304,7 @@ class JobManager(Process):
                     result_queue.put(prediction_set)
                     del self.active_configurations[learner][self._key(configuration)]
                     del self.active_jobs[learner][self._key(configuration)]
+                    print(self.cluster.stats())
                 else:
                     pass
             else:
