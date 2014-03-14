@@ -10,6 +10,7 @@ from dispy import JobCluster, DispyJob
 from collections import Mapping
 import logging
 import os
+import gc
 
 # TODO To read dataset fragment by cross-validation group and fold id only,
 # make run generate an exception containing its ip; then catch the exception on
@@ -314,6 +315,7 @@ class JobManager(Process):
             print("Something is not right: {0}, {1}".format(e, type(e)))
         finally:
             self.lock.release()
+        gc.collect()
 
     '''
     def send_job(self, learning_job, group_id='default'):
