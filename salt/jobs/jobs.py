@@ -129,7 +129,7 @@ class LearningJob(object):
 class JobManager(Process):
     '''Manage and dispatch distributed tasks.'''
 
-    def __init__(self, dataset, task_queue, queues, lock, finished, console_queue, local_cores='autodetect', node_list=('127.0.0.1', )):
+    def __init__(self, dataset, task_queue, queues, lock, finished, console_queue, local_cores='autodetect', node_list=('127.0.0.1', ), ip_addr='127.0.0.1'):
         self.job_groups = {}
         self.task_queue = task_queue
         self.console_queue = console_queue
@@ -141,6 +141,7 @@ class JobManager(Process):
         self.node_list = node_list  # tuple(node_list) pp requires tuple
         self.local_cores = local_cores if type(local_cores) is int else 'autodetect'
         self.dataset = dataset
+        self.ip_addr = ip_addr
         #self.retry_jobs = []
 
         self.active_jobs = {}
@@ -169,6 +170,7 @@ class JobManager(Process):
                         'ping_interval': 1,
                         'poll_interval': 5,
                         'reentrant': True,
+                        'ip_addr': self.ip_addr,
                         #'loglevel': logging.DEBUG,
                         'callback': self.notify_status}
         self.cluster = JobCluster(run, **cluster_args)

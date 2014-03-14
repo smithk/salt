@@ -573,6 +573,7 @@ class SaltMain(ttk.Frame):
         max_jobs = settings['Global'].as_int('maxprocesses')
         classifier_settings = settings.get('Classifiers')
         regressor_settings = settings.get('Regressors')
+        ip_addr = settings['Global'].get('ip_addr')
 
         self.max_results = settings['GUI'].as_int('maxresults')
 
@@ -615,7 +616,8 @@ class SaltMain(ttk.Frame):
                                                         command_queue=self.command_queue,
                                                         local_cores=local_cores,
                                                         node_list=nodes, optimizer=optimizer,
-                                                        max_jobs=max_jobs)
+                                                        max_jobs=max_jobs,
+                                                        ip_addr=ip_addr)
         self.summary_plot = None
         # Start processes
         self.suggestion_task_manager = suggestion_task_manager

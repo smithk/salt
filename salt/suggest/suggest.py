@@ -250,7 +250,7 @@ class SuggestionTask(Process):
 class SuggestionTaskManager():
     def __init__(self, dataset, learners, parameters, metrics, time, report_exit_caller,
                  console_queue=None, command_queue=None, local_cores=0, node_list=None,
-                 optimizer='', max_jobs=10):
+                 optimizer='', max_jobs=10, ip_addr='127.0.0.1'):
         self.dataset = dataset
         self.metrics = metrics
         self.console_queue = console_queue
@@ -272,7 +272,9 @@ class SuggestionTaskManager():
                                                 self.task_queue, self.queues[learner.__name__], self.lock, self.console_queue, finish_at, max_jobs,
                                                 self.command_queues[learner.__name__], optimizer=optimizer)
                                  for learner in learners}
-        self.job_manager = JobManager(self.dataset, self.task_queue, self.queues, self.lock, self.finished, self.console_queue, local_cores, node_list)
+        self.job_manager = JobManager(self.dataset, self.task_queue, self.queues, self.lock,
+                                      self.finished, self.console_queue, local_cores, node_list,
+                                      ip_addr)
 
     def get_baseline_metrics(self, baseline_classifier=BaselineClassifier):
         learner = BaselineRegressor() if self.dataset.is_regression else BaselineClassifier()

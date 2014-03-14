@@ -49,6 +49,7 @@ class Settings(object):
                             'maxprocesses': 10,
                             'localcores': 0,
                             'nodes': ['127.0.0.1'],
+                            'ip_addr': '127.0.0.1',
                             'crossvalidation': '15x2',
                             'holdout': 0.3}
         config['GUI'] = {'maxresults': 10}
