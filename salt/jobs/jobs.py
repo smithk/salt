@@ -8,6 +8,7 @@ from ..data import PredictionSet
 from six import iteritems
 from dispy import JobCluster, DispyJob
 from collections import Mapping
+import logging
 import os
 
 # TODO To read dataset fragment by cross-validation group and fold id only,
@@ -137,7 +138,7 @@ class JobManager(Process):
         self.cluster = None
         #self.jobs = None
         self.finished = finished
-        self.node_list = tuple(node_list)
+        self.node_list = node_list  # tuple(node_list) pp requires tuple
         self.local_cores = local_cores if type(local_cores) is int else 'autodetect'
         self.dataset = dataset
         #self.retry_jobs = []
@@ -162,10 +163,17 @@ class JobManager(Process):
                    Wait for all jobs to finish before closing the JobManager.
         '''
         print("[Job Manager] Started with pid={0}".format(os.getpid()))
-        self.ip_address = '192.168.0.21'
-        self.node_list = ['192.168.0.*']
-        self.cluster = JobCluster(run, nodes=self.node_list, ip_addr=self.ip_address,
-                                  reentrant=True, pulse_interval=60, callback=self.notify_status)
+        cluster_args = {#'port': 51348,
+                        'nodes': self.node_list,
+                        'pulse_interval': 5,
+                        'ping_interval': 1,
+                        'poll_interval': 5,
+                        'reentrant': True,
+                        #'loglevel': logging.DEBUG,
+                        'callback': self.notify_status}
+        self.cluster = JobCluster(run, **cluster_args)
+        #self.cluster = JobCluster(run, nodes=self.node_list, ip_addr=self.ip_address,
+        #                          reentrant=True, pulse_interval=60, callback=self.notify_status)
         try:
             message = self.task_queue.get()  # Wait until a message arrives
             while message:
