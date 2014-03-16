@@ -401,8 +401,8 @@ class LocalJobManager(Process):
                     message = None
         except KeyboardInterrupt:
             print("Ctrl+C detected. JobManager failing gracefully (?)")
-        except:
-            print("Problem here!")
+        except Exception as ex:
+            print("Problem here!", ex)
 
         if self.console_queue is not None:
             self.console_queue.put("{0} [Job Manager] [ All jobs finished ]\n".format(now()))
