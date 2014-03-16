@@ -9,9 +9,10 @@ from .utils.debug import log_step, Log
 from .utils.strings import format_dict
 from .options.readers import StringReader
 from .options import Settings
-from .learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS, DEFAULT_REGRESSORS, DEFAULT_CLASSIFIERS
+from .learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS, create_parameter_space
 from .gui.forms import SaltMain
 from .suggest import SuggestionTaskManager
+import setproctitle
 
 suggestion_task_manager = None
 
@@ -35,22 +36,8 @@ def check_environment():
             'tkinter': tkinter_version}
 
 
-def load_dataset(file_path, is_regression):
-    if file_path:
-        arff_reader = ArffReader(file_path)
-        dataset = arff_reader.read_file(is_regression)
-
-        return dataset
-
-
 def create_default_parameters(learners):
     parameter_dict = {learner.__name__: learner.create_default_params() for learner in learners}
-    return parameter_dict
-
-
-def create_parameter_space(learners, settings, optimizer):
-    print([type(learner) for learner in learners])
-    parameter_dict = {learner.__name__: learner.create_param_space(settings, optimizer) for learner in learners}
     return parameter_dict
 
 
@@ -59,23 +46,73 @@ def load_settings(options):
     return settings
 
 
-def run_cmdline(options):
+def f(x):
+    import time
+    from datetime import datetime
+    time_start = datetime.now()
+    time.sleep(4)
+    time_end = datetime.now()
+    return time_start, time_end
+
+
+def callback(x):
+    print(x)
+    return x
+
+
+def _run_cmdline(cmdline_options):
+    # ==== multiprocessing test. Delete ====
+
+    from multiprocessing import Pool
+    p = Pool(10)
+    print('asdfasdf')
+
+    tasks = []
+    for i in xrange(12):
+        task = p.apply_async(f, (1,), callback=callback)
+        print(type(task))
+        tasks.append(task)
+    from datetime import datetime
+    print(datetime.now())
+    import time
+    time.sleep(9)
+    p.terminate()
+    for task in tasks:
+        print(task.ready())
+    p.close()
+    p.join()
+
+    # ==== end of multiprocessing test ====
+
+
+def run_cmdline(cmdline_options):
     """Run [SALT] in command-line mode.
 
     :param options: user-specified configuration.
     """
     Log.write("Running [SALT] in command-line mode with options\n{options}".format(
-        options=format_dict(options)))
+        options=format_dict(cmdline_options)))
 
-    settings = load_settings(options)
+    # === Settings read from file ===
+    settings = load_settings(cmdline_options)
+    holdout = settings['Global'].as_float('holdout')
+    crossvalidation = settings['Global'].get('crossvalidation', '10')
+    local_cores = settings['Global'].as_int('localcores')
+    node_path_list = settings['Global'].get('nodes', ['localhost'])
+    timeout = settings['Global'].as_int('timeout')
+    max_jobs = settings['Global'].as_int('maxprocesses')
+    classifier_settings = settings.get('Classifiers')
+    regressor_settings = settings.get('Regressors')
+    ip_addr = settings['Global'].get('ip_addr')
+
+    xval_repetitions, xval_folds = Settings.get_crossvalidation(crossvalidation)
+    nodes = Settings.read_nodes(node_path_list)
 
     # === Dataset ===
-    data_path = options['input_file']
-    is_regression = options['regression']
-    dataset = load_dataset(data_path, is_regression)
-    if not dataset:
-        return  # break?
-    dataset.initialize()
+    dataset_path = cmdline_options['input_file']
+    is_regression = cmdline_options['regression']
+    optimizer = cmdline_options['optimizer']
+    learners = cmdline_options['learners']
 
     console_height, console_width = _os.popen('stty size', 'r').read().split()
     np.set_printoptions(linewidth=int(console_width) - 5)
@@ -83,33 +120,49 @@ def run_cmdline(options):
     # === Learners ===
     classifier_settings = settings.get('Classifiers')
     regressor_settings = settings.get('Regressors')
+
     default_classifiers = None
     default_regressors = None
     if classifier_settings:
-        default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
-                               if classifier_settings[key].get('enabled', False)]
+        default_classifiers = [classifier for classifier in classifier_settings
+                               if classifier_settings[classifier].get('enabled')
+                               in ('True', '$True')]
     if regressor_settings:
-        default_regressors = [AVAILABLE_REGRESSORS[key] for key in regressor_settings
-                              if regressor_settings[key].get('enabled', False)]
-    #import sys
-    # sys.exit(0)
-    learners = default_regressors if is_regression else default_classifiers
-    # for testing:
-    learners = DEFAULT_REGRESSORS if dataset.is_regression else DEFAULT_CLASSIFIERS
-    if not learners or len(learners) == 0:
+        default_regressors = [regressor for regressor in regressor_settings
+                              if regressor_settings[regressor].get('enabled')
+                              in ('True', '$True')]
+    if is_regression:
+        learner_list = AVAILABLE_REGRESSORS.keys()
+        default_learners = default_regressors
+    else:
+        learner_list = AVAILABLE_CLASSIFIERS.keys()
+        default_learners = default_classifiers
+
+    learners = [learner for learner in learners if learner in learner_list] \
+        if learners else default_learners
+    if len(learners) == 0:
+        print("Invalid learner set")
+        return
+
+    parameter_space = create_parameter_space(learners, settings,
+                                             AVAILABLE_REGRESSORS if is_regression
+                                             else AVAILABLE_CLASSIFIERS)
+
+    train_set, hold_out_set = ArffReader.load_dataset(dataset_path, is_regression, holdout)
+    if not train_set:
         return  # break?
 
-    # === Metrics ===
-    metrics = []
-    if metrics is None:  # or len(metrics) == 0:
-        print("No metrics")
-        return  # break?
+    train_set.initialize(xval_repetitions, xval_folds)
 
-    #parameters = create_default_parameters(learners)
-    parameter_space = create_parameter_space(learners, settings, optimizer='KDEOptimizer')
-
-    suggestion_task_manager = SuggestionTaskManager(dataset, learners, parameter_space, metrics,
-                                                    time=settings['Global'].as_int('timeout'), report_exit_caller=report_results)
+    suggestion_task_manager = SuggestionTaskManager(train_set, learners, parameter_space,
+                                                    metrics=[], time=timeout,
+                                                    report_exit_caller=report_results,
+                                                    console_queue=None,
+                                                    command_queue=None,
+                                                    local_cores=local_cores,
+                                                    node_list=nodes, optimizer=optimizer,
+                                                    max_jobs=max_jobs,
+                                                    ip_addr=ip_addr, distributed=False)
     Log.write_color("\n========================= SENDING JOBS =========================", 'OKGREEN')
     try:
         suggestion_task_manager.run_tasks()

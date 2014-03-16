@@ -125,4 +125,4 @@ DEFAULT_REGRESSORS = [LinearRegressor,
                       RandomForestRegressor,
                       ExtraTreeEnsembleRegressor,
                       GradientBoostingRegressor
-                     ]
+                      ]

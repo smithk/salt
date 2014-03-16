@@ -11,8 +11,9 @@ class BaseLearner(object):
     learner_name = property(_get_name)
 
 
-def create_parameter_space(learners, settings):
+def create_parameter_space(learners, settings, learner_dict):
     '''Create the parameter space structure for each learner from the list,
     according to the given options.'''
-    parameter_dict = {learner.__name__: learner.create_param_space(settings) for learner in learners}
+    parameter_dict = {learner_dict[learner].__name__: learner_dict[learner].create_param_space(settings)
+                      for learner in learners if learner in learner_dict}
     return parameter_dict

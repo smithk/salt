@@ -558,7 +558,8 @@ class SaltMain(ttk.Frame):
         # === Dataset ===
         settings = Settings.load_or_create_config()
         holdout = settings['Global'].as_float('holdout')
-        train_set, hold_out_set = ArffReader.load_dataset(self.dataset_path, self.dataset_type.get(), holdout)
+        is_regression = self.dataset_type.get()
+        train_set, hold_out_set = ArffReader.load_dataset(self.dataset_path, is_regression, holdout)
         self.dataset_name = train_set.DESCR
         print("Training with {0} points, {1} points held-out".format(len(train_set.data), len(hold_out_set.data)))
         if train_set is None:
@@ -587,12 +588,13 @@ class SaltMain(ttk.Frame):
         default_regressors = None
         optimizer = 'ShrinkingHypercubeOptimizer'
         if classifier_settings:
-            # default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
-            default_classifiers = [AVAILABLE_CLASSIFIERS[key] for key in classifier_settings
-                                   if classifier_settings[key].get('enabled', False) in ('True', '$True')]
+            default_classifiers = [classifier for classifier in classifier_settings
+                                   if classifier_settings[classifier].get('enabled')
+                                   in ('True', '$True')]
         if regressor_settings:
-            default_regressors = [AVAILABLE_REGRESSORS[key] for key in regressor_settings
-                                  if regressor_settings[key].get('enabled', False)]
+            default_regressors = [regressor for regressor in regressor_settings
+                                  if regressor_settings[regressor].get('enabled')
+                                  in ('True', '$True')]
         learners = default_regressors if train_set.is_regression else default_classifiers
         if len(learners) == 0:
             print("No learners selected")
@@ -604,7 +606,9 @@ class SaltMain(ttk.Frame):
             print("No metrics")
             return
 
-        parameter_space = create_parameter_space(learners, settings)
+        parameter_space = create_parameter_space(learners, settings,
+                                                 AVAILABLE_REGRESSORS if is_regression
+                                                 else AVAILABLE_CLASSIFIERS)
 
         self.finish_at = datetime.now() + timedelta(minutes=timeout)
         optimizer = self.selected_optimizer.get()

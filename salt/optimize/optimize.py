@@ -311,3 +311,10 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         self.num_configs_tried += 1
         print("now trying {0} ({1} configurations tried)".format(next_configuration, self.num_configs_tried))
         return next_configuration
+
+AVAILABLE_OPTIMIZERS = {
+    'randomsearch': KDEOptimizer,
+    'kde': KDEOptimizer,
+    'shrinking': ShrinkingHypercubeOptimizer,
+    'none': DefaultConfigOptimizer
+}

@@ -4,6 +4,6 @@
 
 
 #job_manager = LearningJobManager()
-from .jobs import JobManager
+from .jobs import LocalJobManager, DistributedJobManager
 
-__all__ = ['JobManager']
+__all__ = ['LocalJobManager', 'DistributedJobManager']
