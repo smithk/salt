@@ -114,8 +114,11 @@ def run_cmdline(cmdline_options):
     optimizer = cmdline_options['optimizer']
     learners = cmdline_options['learners']
 
-    console_height, console_width = _os.popen('stty size', 'r').read().split()
-    np.set_printoptions(linewidth=int(console_width) - 5)
+    try:
+        console_height, console_width = _os.popen('stty size', 'r').read().split()
+        np.set_printoptions(linewidth=int(console_width) - 5)
+    except:
+        pass
 
     # === Learners ===
     classifier_settings = settings.get('Classifiers')
