@@ -14,6 +14,7 @@ import sys
 import numpy as np
 import os
 import setproctitle
+import cPickle
 
 
 class CommandDispatcher(Process):
@@ -370,7 +371,8 @@ class SuggestionTaskManager():
         #self.lock.acquire()
         #print([result.scores for result in task.optimizer.evaluation_results], status)
         #print([result.mean for result in task.optimizer.evaluation_results], status)
-        print(len(task.optimizer.evaluation_results))
+        cPickle.dump(task.optimizer.evaluation_results,
+                     open('data/{0}_{1}.dat'.format(task.learner, id(task.optimizer.evaluation_results)), 'w'))
         suggestion_task_name = task.learner
         self.statuses[suggestion_task_name] = status
         task.optimizer.evaluation_results.reverse()

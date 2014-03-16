@@ -351,7 +351,7 @@ class LocalJobManager(Process):
     def get_used_memory(self):
         import psutil
         proc = psutil.Process(os.getpid())
-        return proc.get_memory_percent()
+        return proc.memory_percent()
 
     def run(self, wait=False):
         setproctitle.setproctitle("SALT LocalJobManager")
