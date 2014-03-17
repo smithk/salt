@@ -1,6 +1,6 @@
 """The :mod:`salt.optimize.base` module provides classes for optimization."""
 
-from bisect import insort
+from bisect import insort_left as insort
 from numpy.random import shuffle
 import numpy as np
 from six import iteritems
@@ -12,13 +12,17 @@ from copy import deepcopy
 
 class BaseOptimizer(object):
     def __init__(self, param_space):
+        self.best = None
         self.param_space = param_space
         self.evaluation_results = []
         self.evaluation_parameters = []
         self.initial_configurations = [{}]  # Try these first
 
     def add_results(self, evaluation_results):
-        insort(self.evaluation_results, evaluation_results)
+        #insort(self.evaluation_results, evaluation_results)
+        self.evaluation_results.append(evaluation_results)
+        if evaluation_results > self.best:
+            self.best = evaluation_results
 
     def get_next_configuration(self):
         raise NotImplementedError
@@ -123,8 +127,8 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         self.hypercube_threshold = 1e-4
         self.configurations = []
         default = param_space.get_default()
-        #print("default settings are: ", default)
-        self.initial_configs = []  # [default]  # Try first with default configuration
+        print("default settings are: ", default)
+        self.initial_configs = [default]  # [default]  # Try first with default configuration
         numerical_params = param_space.numerical_params
         self.numerical_params_exist = len(numerical_params) > 0
         # TODO Do this correctly
@@ -132,6 +136,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         #self.hypercube_results = {}
 
         self.hypercube_scores = {}
+        self.hypercube_bests = {}
         self.num_configs_tried = 0
         self.mean_sorted_score_lists = []  # Keep score lists (ResultSet) sorted by their mean (increasingly)
 
@@ -184,15 +189,29 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         return score_list
 
     def add_results(self, evaluation_results):
+        super(ShrinkingHypercubeOptimizer, self).add_results(evaluation_results)
+
+        hypercube_signature = ParameterSpace.get_cat_signature(self.param_space, evaluation_results.configuration)
+        hypercube_signature = str(hypercube_signature)
+        hypercube_best = self.hypercube_bests.get(hypercube_signature)
+        if hypercube_best is None:
+            self.hypercube_bests[hypercube_signature] = evaluation_results
+        if evaluation_results > hypercube_best:
+            self.expand(evaluation_results.configuration)
+            self.hypercube_bests[hypercube_signature] = evaluation_results
+        else:
+            self.shrink(hypercube_best.configuration)
+
+    def _add_results(self, evaluation_results):
         # Optimizes means
         super(ShrinkingHypercubeOptimizer, self).add_results(evaluation_results)
         # Get the list of results for the current hypercube (the one that
         # matches the signature), as a dictionary {configuration: result_set}
-        hypercube_score_list = self.get_hypercube_scores(evaluation_results.parameters)
+        hypercube_score_list = self.get_hypercube_scores(evaluation_results.configuration)
 
         # List of scores (ResultSet) for the current configuration
-        config_score_list = self.get_score_list(evaluation_results.parameters, hypercube_score_list)
-        config_score_list.add(evaluation_results.metrics.score)
+        config_score_list = self.get_score_list(evaluation_results.configuration, hypercube_score_list)
+        config_score_list.add(evaluation_results.mean)
 
         last_best = None
         if len(self.mean_sorted_score_lists) > 0:
@@ -311,10 +330,3 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         self.num_configs_tried += 1
         print("now trying {0} ({1} configurations tried)".format(next_configuration, self.num_configs_tried))
         return next_configuration
-
-AVAILABLE_OPTIMIZERS = {
-    'randomsearch': KDEOptimizer,
-    'kde': KDEOptimizer,
-    'shrinking': ShrinkingHypercubeOptimizer,
-    'none': DefaultConfigOptimizer
-}

@@ -182,7 +182,6 @@ class Normal(Distribution):
         return 'Normal({0}, {1})'.format(self.mean, self.stdev)
 
 
-
 class LogNormal(Distribution):
     """LogNormal distribution"""
     def __init__(self, mean=0, stdev=1):
@@ -362,7 +361,8 @@ class ParameterSpace(object):
             categorical_space = {name: configuration[name] for name in param_space.categorical_params.keys()}
             for cat in param_space.categorical_params.values():
                 categorical_space.update(self.get_cat_signature(cat.categories[configuration[cat.name]], configuration))
-            return categorical_space
+            ordered_categorical_space = OrderedDict(sorted(categorical_space.items()))
+            return ordered_categorical_space
         except KeyError as key_exc:
             print("An error happened when attempting to retrieve the signature"
                   "for\n\t{0}\non\n\t{1}".format(configuration, param_space.categorical_params))

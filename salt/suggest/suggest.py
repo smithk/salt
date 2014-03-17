@@ -371,8 +371,9 @@ class SuggestionTaskManager():
         #self.lock.acquire()
         #print([result.scores for result in task.optimizer.evaluation_results], status)
         #print([result.mean for result in task.optimizer.evaluation_results], status)
-        cPickle.dump(task.optimizer.evaluation_results,
-                     open('data/{0}_{1}.dat'.format(task.learner, id(task.optimizer.evaluation_results)), 'w'))
+        with open('data/{0}_{1}_{2}.dat'.format(task.learner, id(task.optimizer.evaluation_results), id(task.optimizer.evaluation_results[-1])), 'w') as output:
+            cPickle.dump(task.optimizer.evaluation_results, output)
+
         suggestion_task_name = task.learner
         self.statuses[suggestion_task_name] = status
         task.optimizer.evaluation_results.reverse()
