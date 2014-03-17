@@ -371,9 +371,20 @@ class SuggestionTaskManager():
         #self.lock.acquire()
         #print([result.scores for result in task.optimizer.evaluation_results], status)
         #print([result.mean for result in task.optimizer.evaluation_results], status)
-        if len(task.optimizer.evaluation_results) % 20 == 0:
-            with open('data/{0}_{1}_{2}.dat'.format(task.learner, id(task.optimizer.evaluation_results), id(task.optimizer.evaluation_results[-1])), 'w') as output:
+        if len(task.optimizer.evaluation_results) % 2 == 0:
+            unique_id = id(task.optimizer.evaluation_results)
+            unique_status_id = id(task.optimizer.evaluation_results[-1])
+            with open('data/{0}_{1}_{2}.dat'.format(task.learner, unique_id, unique_status_id), 'w') as output:
                 cPickle.dump(task.optimizer.evaluation_results, output)
+            if len(task.optimizer.evaluation_results) > 1:
+                last_dump_id = id(task.optimizer.evaluation_results[-2])
+                filename = 'data/{0}_{1}_{2}'.format(task.learner, unique_id, last_dump_id)
+                import os
+                if os.path.exists(filename):
+                    try:
+                        os.remove(filename)
+                    except:
+                        pass
 
         suggestion_task_name = task.learner
         self.statuses[suggestion_task_name] = status
