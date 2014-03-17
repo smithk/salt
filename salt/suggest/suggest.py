@@ -374,13 +374,16 @@ class SuggestionTaskManager():
         if len(task.optimizer.evaluation_results) % 2 == 0:
             unique_id = id(task.optimizer.evaluation_results)
             unique_status_id = id(task.optimizer.evaluation_results[-1])
-            filename = 'data/{0}_{1}_{2}.dat'.format(task.learner, unique_id, unique_status_id)
-            with open(filename, 'w') as output:
+            new_filename = '{0}_{1}_{2}.dat'.format(task.learner, unique_id, unique_status_id)
+            new_path = "data/" + new_filename
+            with open(new_path, 'w') as output:
                 cPickle.dump(task.optimizer.evaluation_results, output)
             if len(task.optimizer.evaluation_results) > 1:
                 import os
                 files = os.listdir('data/')
                 for filename in files:
+                    if filename == new_filename:
+                        continue
                     if filename.starts_with("{0}_{1}".format(task.learner, unique_id)):
                         fullpath = os.path.join("data", filename)
                         try:
