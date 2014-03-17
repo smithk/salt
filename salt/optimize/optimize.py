@@ -128,7 +128,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         self.configurations = []
         default = param_space.get_default()
         print("default settings are: ", default)
-        self.initial_configs = [default]  # [default]  # Try first with default configuration
+        self.initial_configs = []  # [default]  # Try first with default configuration
         numerical_params = param_space.numerical_params
         self.numerical_params_exist = len(numerical_params) > 0
         # TODO Do this correctly
