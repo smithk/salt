@@ -374,17 +374,19 @@ class SuggestionTaskManager():
         if len(task.optimizer.evaluation_results) % 2 == 0:
             unique_id = id(task.optimizer.evaluation_results)
             unique_status_id = id(task.optimizer.evaluation_results[-1])
-            with open('data/{0}_{1}_{2}.dat'.format(task.learner, unique_id, unique_status_id), 'w') as output:
+            filename = 'data/{0}_{1}_{2}.dat'.format(task.learner, unique_id, unique_status_id)
+            with open(filename, 'w') as output:
                 cPickle.dump(task.optimizer.evaluation_results, output)
             if len(task.optimizer.evaluation_results) > 1:
-                last_dump_id = id(task.optimizer.evaluation_results[-2])
-                filename = 'data/{0}_{1}_{2}'.format(task.learner, unique_id, last_dump_id)
                 import os
-                if os.path.exists(filename):
-                    try:
-                        os.remove(filename)
-                    except:
-                        pass
+                files = os.listdir('data/')
+                for filename in files:
+                    if filename.starts_with("{0}_{1}".format(task.learner, unique_id)):
+                        fullpath = os.path.join("data", filename)
+                        try:
+                            os.remove(fullpath)
+                        except:
+                            pass
 
         suggestion_task_name = task.learner
         self.statuses[suggestion_task_name] = status
