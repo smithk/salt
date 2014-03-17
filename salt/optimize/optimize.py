@@ -1,6 +1,6 @@
 """The :mod:`salt.optimize.base` module provides classes for optimization."""
 
-from bisect import insort_left as insort
+#from bisect import insort_left as insort
 from numpy.random import shuffle
 import numpy as np
 from six import iteritems
@@ -135,10 +135,8 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         #self.best_result_groups = []
         #self.hypercube_results = {}
 
-        self.hypercube_scores = {}
         self.hypercube_bests = {}
         self.num_configs_tried = 0
-        self.mean_sorted_score_lists = []  # Keep score lists (ResultSet) sorted by their mean (increasingly)
 
     def configurations_exhausted(self):
         return not self.numerical_params_exist
@@ -171,14 +169,6 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             self.hypercubes[str(signature)] = hypercube
         return hypercube
 
-    def get_hypercube_scores(self, configuration):
-        signature = ParameterSpace.get_cat_signature(self.param_space, configuration)
-        hypercube_score_list = self.hypercube_scores.get(str(signature))
-        if hypercube_score_list is None:
-            hypercube_score_list = {}
-            self.hypercube_scores[str(signature)] = hypercube_score_list
-        return hypercube_score_list
-
     def get_score_list(self, configuration, hypercube_score_list):
         # Obtain the score list for a specific configuration in their
         # respective hypercube (the one matching its signature)
@@ -201,52 +191,6 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             self.hypercube_bests[hypercube_signature] = evaluation_results
         else:
             self.shrink(hypercube_best.configuration)
-
-    def _add_results(self, evaluation_results):
-        # Optimizes means
-        super(ShrinkingHypercubeOptimizer, self).add_results(evaluation_results)
-        # Get the list of results for the current hypercube (the one that
-        # matches the signature), as a dictionary {configuration: result_set}
-        hypercube_score_list = self.get_hypercube_scores(evaluation_results.configuration)
-
-        # List of scores (ResultSet) for the current configuration
-        config_score_list = self.get_score_list(evaluation_results.configuration, hypercube_score_list)
-        config_score_list.add(evaluation_results.mean)
-
-        last_best = None
-        if len(self.mean_sorted_score_lists) > 0:
-            last_best = self.mean_sorted_score_lists[-1]
-        if config_score_list in self.mean_sorted_score_lists:
-            self.mean_sorted_score_lists.remove(config_score_list)
-        insort(self.mean_sorted_score_lists, config_score_list)
-        new_best = self.mean_sorted_score_lists[-1]
-
-        # TODO Fix bug when converting param.default to float (it can be None)
-        '''
-        if last_best is not None:
-            print("comparing *{0} ({1} points) to {2} ({3} points)".format(last_best.mean,
-                                                                           len(last_best.scores),
-                                                                           config_score_list.mean,
-                                                                           len(config_score_list.scores)
-                                                                           )
-                  )
-        '''
-        if new_best != last_best:
-            self.expand(new_best.configuration)
-            '''
-            print("new best for {0} {1}: {2} ({3}, id={4}) > "
-                  "{5} ({6}, id={7})".format(evaluation_results.learner,
-                                             id(hypercube_score_list),
-                                             new_best.mean, len(new_best.scores),
-                                             id(new_best),
-                                             last_best.mean if last_best else '',
-                                             len(last_best.scores) if last_best else '',
-                                             id(last_best) if last_best else ''
-                                             )
-                  )
-            '''
-        else:
-            self.shrink(last_best.configuration)  # Shrink around same config
 
     def expand(self, configuration, rate=None):
         expand_rate = rate or self.expand_rate
@@ -292,18 +236,6 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
             param.distribution = deepcopy(param.prior)
         if str(signature) in self.hypercubes:
             del self.hypercubes[str(signature)]
-        if str(signature) in self.hypercube_scores:
-            try:
-                self.mean_sorted_score_lists.remove(self.hypercube_scores[str(signature)])
-            except:
-                pass
-            for score in self.hypercube_scores[str(signature)].values():
-                try:
-                    self.mean_sorted_score_lists.remove(score)
-                except:
-                    pass
-            del self.hypercube_scores[str(signature)]
-            # but keep the references in mean_sorted_score_lists
 
     def shrink(self, configuration):
         self.expand(configuration, self.shrink_rate)
@@ -314,7 +246,6 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         else:
             if len(self.hypercubes) > 0 and all(value <= self.hypercube_threshold for hypercube in self.hypercubes.values() for value in hypercube.values()):
                 self.hypercubes = {}
-                self.mean_sorted_score_lists = []
                 next_configuration = self.param_space.sample_configuration()
                 #next_configuration = None  # TODO Restart hypercube on different initial conditions
             else:
