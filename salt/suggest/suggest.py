@@ -380,6 +380,11 @@ class SuggestionTaskManager():
                 os.rename(new_path, new_path + "_old")
             except:
                 pass
+            for evaluation_result in task.optimizer.evaluation_results:
+                for evaluation in evaluation_result._evaluations:
+                    evaluation._predicted = None
+                    evaluation._predicted_class = None
+                    evaluation.baseline = None
             with open(new_path, 'w') as output:
                 cPickle.dump(task.optimizer.evaluation_results, output)
             try:
