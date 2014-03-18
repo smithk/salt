@@ -382,6 +382,11 @@ class SuggestionTaskManager():
                 pass
             with open(new_path, 'w') as output:
                 cPickle.dump(task.optimizer.evaluation_results, output)
+            try:
+                import os
+                os.remove(new_path + "_old")
+            except:
+                pass
 
         suggestion_task_name = task.learner
         self.statuses[suggestion_task_name] = status
