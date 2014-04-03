@@ -2,43 +2,44 @@
 
 [Global]
     crossvalidation = 15x2
-    maxprocesses = 10
-    randomstate = 283
-    timeout = 10
-    localcores = 0
-    nodes = 127.0.0.1,
-    holdout = 0.3
+    maxprocesses = 5
+    randomstate = 282
+    timeout = 480
+    localcores = 4
+    nodes = read(hosts.txt)
+    holdout = 0.1
+	ip_addr = 127.0.0.1
 [GUI]
     maxresults = 10
 [Classifiers]
     [[LogisticRegressionClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[penalty]]]]
                 default = l2
                 [[[[[l2]]]]]
-                    weight = 0.95
+                    weight = 1
                     [[[[[[CategoricalParams]]]]]]
                         [[[[[[[dual]]]]]]]
                             default = $False
                             [[[[[[[[$False]]]]]]]]
-                                weight = 0.75
+                                weight = 1
                             [[[[[[[[$True]]]]]]]]
-                                weight = 0.25
+                                weight = 0
                 [[[[[l1]]]]]
-                    weight = 0.05
+                    weight = 0
             [[[[class_weight]]]]
                 default = $None
                 [[[[[auto]]]]]
-                    weight = 0.5
+                    weight = 1
                 [[[[[$None]]]]]
-                    weight = 0.5
+                    weight = 0
             [[[[fit_intercept]]]]
                 default = $False
                 [[[[[$False]]]]]
-                    weight = 0.5
+                    weight = 1
                 [[[[[$True]]]]]
-                    weight = 0.5
+                    weight = 0
                     [[[[[[NumericalParams]]]]]]
                         [[[[[[[intercept_scaling]]]]]]]
                             distribution = uniform
@@ -47,17 +48,17 @@
                             default = 0.0
         [[[NumericalParams]]]
             [[[[C]]]]
-                distribution = loguniform
-                lower = -10.0
-                upper = 10.0
-                default = 0
+                distribution = uniform
+                lower = 1.0
+                upper = 80.0
+                default = 1
             [[[[tol]]]]
-                distribution = lognormal
-                mean = 0.0
-                stdev = 1.0
+                distribution = uniform
+                lower = 0.0
+                upper = 1.0
                 default = 0.0001
     [[SGDClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[warm_start]]]]
                 default = $False
@@ -75,9 +76,9 @@
                     weight = 0.111111111111
                     [[[[[[NumericalParams]]]]]]
                         [[[[[[[epsilon]]]]]]]
-                            distribution = lognormal
-                            mean = 5.0
-                            stdev = 1.0
+                            distribution = uniform
+                            lower = 0
+                            upper = 1.0
                             default = 0.1
                 [[[[[squared_hinge]]]]]
                     weight = 0.111111111111
@@ -89,17 +90,17 @@
                     weight = 0.111111111111
                     [[[[[[NumericalParams]]]]]]
                         [[[[[[[epsilon]]]]]]]
-                            distribution = lognormal
-                            mean = 5.0
-                            stdev = 1.0
+                            distribution = uniform
+                            lower = 0
+                            upper = 4.0
                             default = 0.1
                 [[[[[squared_epsilon_insensitive]]]]]
                     weight = 0.111111111111
                     [[[[[[NumericalParams]]]]]]
                         [[[[[[[epsilon]]]]]]]
-                            distribution = lognormal
-                            mean = 5.0
-                            stdev = 1.0
+                            distribution = uniform
+                            lower = 0
+                            upper = 4.0
                             default = 0.1
                 [[[[[perceptron]]]]]
                     weight = 0.111111111111
@@ -161,13 +162,13 @@
                 upper = 1.0
                 default = 0.0
             [[[[n_iter]]]]
-                distribution = lognormal
-                mean = 1.60943791243
-                stdev = 1.0
+                distribution = uniform
+                lower = 1
+                upper = 15
                 default = 5
                 discretize = $True
     [[PassiveAggressiveClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[warm_start]]]]
                 default = $False
@@ -195,9 +196,9 @@
                     weight = 0.5
         [[[NumericalParams]]]
             [[[[n_iter]]]]
-                distribution = lognormal
-                mean = 0.0
-                stdev = 1.0
+                distribution = uniform
+                lower = 1
+                upper = 20
                 default = 1
                 discretize = $True
                 valid_if = value > 0
@@ -208,7 +209,7 @@
                 upper = 10.0
                 default = 1.0
     [[RidgeClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[normalize]]]]
                 default = $True
@@ -234,25 +235,25 @@
                     weight = 0.5
         [[[NumericalParams]]]
             [[[[alpha]]]]
-                distribution = lognormal
-                mean = 0.0
-                stdev = 0.5
+                distribution = uniform
+                lower = 0
+                upper = 1
                 default = 1.0
             [[[[max_iter]]]]
-                distribution = lognormal
-                mean = 1.60943791243
-                stdev = 1.0
+                distribution = uniform
+                lower = 1
+                upper = 10
                 default = $None
                 discretize = $True
             [[[[tol]]]]
-                distribution = lognormal
-                mean = -6.90775527898
-                stdev = 0.5
+                distribution = uniform
+                lower = 0
+                upper = 1
                 default = 0.001
     [[GaussianNBClassifier]]
-        enabled = $True
+        enabled = $False
     [[KNNClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[weights]]]]
                 default = uniform
@@ -338,13 +339,13 @@
                             discretize = $True
         [[[NumericalParams]]]
             [[[[n_neighbors]]]]
-                distribution = lognormal
-                mean = 1.60943791243
-                stdev = 1.0
+                distribution = uniform
+                lower = 1
+                upper = 12
                 default = 5
                 discretize = $True
     [[RadiusNeighborsClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[weights]]]]
                 default = uniform
@@ -435,7 +436,7 @@
                 upper = 10.0
                 default = 1.0
     [[NearestCentroidClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[metric]]]]
                 default = euclidean
@@ -610,7 +611,7 @@
                 upper = 20.0
                 default = 1
                 discretize = $True
-    [[ExtraTreesClassifier]]
+    [[ExtraTreeEnsembleClassifier]]
         enabled = $True
         [[[CategoricalParams]]]
             [[[[bootstrap]]]]
@@ -802,9 +803,9 @@
                 upper = 10.0
                 default = 0
             [[[[tol]]]]
-                distribution = lognormal
-                mean = -5.0
-                stdev = 0.5
+                distribution = uniform
+                lower = 0
+                upper = 0.5
                 default = 0.001
     [[LinearSVMClassifier]]
         enabled = $True
@@ -851,12 +852,12 @@
                 upper = 10.0
                 default = 1.0
             [[[[tol]]]]
-                distribution = lognormal
-                mean = -5.0
-                stdev = 0.5
+                distribution = uniform
+                lower = 0
+                upper = 0.5
                 default = 0.0001
     [[NuSVMClassifier]]
-        enabled = $True
+        enabled = $False
         [[[CategoricalParams]]]
             [[[[kernel]]]]
                 default = rbf
@@ -915,17 +916,17 @@
                 upper = 1.0
                 default = 0
             [[[[tol]]]]
-                distribution = lognormal
-                mean = -5.0
-                stdev = 0.5
+                distribution = uniform
+                lower = 0
+                upper = 0.5
                 default = 0.5
     [[LinearDiscriminantClassifier]]
-        enabled = $True
+        enabled = $False
     [[QuadraticDiscriminantClassifier]]
-        enabled = $True
+        enabled = $False
         [[[NumericalParams]]]
             [[[[reg_param]]]]
                 distribution = uniform
-                lower = 0.0
+                lower = 0.001
                 upper = 1.0
-                default = 0.0
+                default = 0.01

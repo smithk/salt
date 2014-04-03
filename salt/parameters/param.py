@@ -6,6 +6,7 @@ from six import iteritems
 from collections import Mapping, OrderedDict
 #import inspect
 from copy import deepcopy
+from sklearn.mixture import GMM
 
 
 class Distribution(object):
@@ -161,13 +162,18 @@ class Normal(Distribution):
 
     variance = property(lambda self: self.stdev ** 2)
 
-    def get_sample(self, discretize=None):
-        value = np.random.normal(loc=self.mean, scale=self.stdev, size=None)
+    def get_sample(self, discretize=None, num_points=None):
+        value = np.random.normal(loc=self.mean, scale=self.stdev, size=num_points)
         if discretize is True:
-            value = int(np.rint(value))
+            if num_points is None:
+                value = int(np.rint(value))
+            else:
+                value = value.astype(int)
         else:
-            value = float(value)
-
+            if num_points is None:
+                value = float(value)
+            else:
+                value = value.astype(float)
         return value
 
     def dump(self):
@@ -208,6 +214,75 @@ class LogNormal(Distribution):
     def __str__(self):
         return 'LogNormal(mu={0}, sigma={1})'.format(self.mean, self.stdev)
 
+
+class GaussianMixture(Distribution):
+    def __init__(self, means=None, stdevs=None, weights=None):
+        super(GaussianMixture, self).__init__()
+        if means is not None:
+            self.gmm = GMM(n_components=len(means))
+            self.means = np.atleast_2d(means).T
+            self.variances = np.atleast_2d(stdevs).T ** 2
+            self.weights = np.atleast_2d(weights)
+            self.gmm.means_ = self.means
+            self.gmm._set_covars(self.variances)
+            self.gmm.weights_ = self.weights
+        else:
+            self.gmm = GMM(n_components=1)
+        self.data = []
+
+    def reset(self):
+        self.gmm = None
+
+    def get_sample(self, num_points=1):
+        sampled_values = self.gmm.sample(num_points)
+        return sampled_values
+
+    def eval(self, x_points):
+        values = self.gmm.score(x_points)
+        return values
+
+
+    @classmethod
+    def belongs(self, sample, gmm):
+        pass
+
+    def fit(self, data):
+        self.gmm.fit(data)
+
+    def combine(self, sample):
+        if type(sample) is list:
+            self.data += sample
+        else:
+            self.data += [sample]
+        if len(self.data) <= self.gmm.n_components:
+            return
+        else:
+            self.gmm.fit(self.data)
+        new_gmm = GMM(n_components=self.gmm.n_components + 1)
+        new_gmm.fit(self.data)
+        new_aic = new_gmm.aic(self.data)
+        curr_aic = self.gmm.aic(self.data)
+
+        relative_likelihood = np.exp((new_aic - curr_aic) / 2)
+        if relative_likelihood < 2e-5:
+            print("updating model to distribution with {0} components".format(new_gmm.n_components))
+            self.gmm = new_gmm
+        elif self.gmm.n_components > 1:
+            simpler_gmm = GMM(n_components=self.gmm.n_components - 1)
+            simpler_gmm.fit(self.data)
+            if simpler_gmm.aic(self.data) < curr_aic:
+                self.gmm = simpler_gmm
+            #self.means = self.gmm.means_
+            #self.variances = self.gmm._get_covars()
+            #self.weights = self.gmm.weights_
+
+    def simplify(self):
+        pass
+
+    def get_plot_data(self, start, end, num_points):
+        x_points = np.linspace(start, end + 1, num_points)
+        y_points = np.exp(self.gmm.score(x_points))
+        return x_points, y_points
 
 class ParameterSpace(object):
     """Describes the parameter space"""

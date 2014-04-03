@@ -8,6 +8,7 @@ from six.moves import range
 from ..parameters.param import Uniform, LogUniform, Normal, LogNormal, ParameterSpace
 from ..evaluate.evaluate import ResultSet
 from copy import deepcopy
+import cPickle
 
 
 class BaseOptimizer(object):
@@ -21,6 +22,8 @@ class BaseOptimizer(object):
     def add_results(self, evaluation_results):
         #insort(self.evaluation_results, evaluation_results)
         self.evaluation_results.append(evaluation_results)
+        with open("data/{0}".format(evaluation_results.learner), 'a') as output:
+            cPickle.dump((evaluation_results._mean, evaluation_results.configuration), output)
         if evaluation_results > self.best:
             self.best = evaluation_results
 
@@ -117,6 +120,16 @@ class KDEOptimizer(BaseOptimizer):
         return next_configuration
 
 
+class ModelEstimationOptimizer(BaseOptimizer):
+    def __init__(self, param_space):
+        super(ModelEstimationOptimizer, self).__init__(param_space)
+        self.p_prior = 1.
+        self.p_learned = 0.
+
+    def add_results(self, evaluation_results):
+        super(ModelEstimationOptimizer, self).add_results(evaluation_results)
+
+
 class ShrinkingHypercubeOptimizer(BaseOptimizer):
     def __init__(self, param_space):
         super(ShrinkingHypercubeOptimizer, self).__init__(param_space)
@@ -157,7 +170,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
                 hypercube[name] = starting_width * dist.stdev
             else:
                 print(name, ' is unknown distribution type')
-        print("created hypercube: {0}".format(hypercube))
+        #print("created hypercube: {0}".format(hypercube))
         return hypercube
 
     def get_hypercube(self, configuration):
@@ -259,5 +272,39 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
                     next_configuration = self.param_space.sample_configuration()
             self.configurations.append(next_configuration)
         self.num_configs_tried += 1
-        print("now trying {0} ({1} configurations tried)".format(next_configuration, self.num_configs_tried))
+        #print("now trying {0} ({1} configurations tried)".format(next_configuration, self.num_configs_tried))
         return next_configuration
+
+
+'''
+class GaussianMixtureOptimizer(BaseOptimizer):
+    def __init__(self, param_space):
+        super(GaussianMixtureOptimizer, self).__init__(param_space)
+        self.GMMs = {}
+        self.prior_freq = 1.
+
+    def add_results(self, evaluation_results):
+        super(GaussianMixtureOptimizer, self).add_results(evaluation_results)
+        get signature from evaluation results
+        get numerical hyperparameter space from signature
+        for each numerical hyperparameter:
+            update distribution with observation
+            try to simplify distribution
+
+    def get_next_configuration(self):
+        signature = sample_signature(self.param_space)
+        numerical_params = ParameterSpace.get_numerical_space(self.param_space, signature)
+        GMM = GMMs.get(str(signature))
+        if GMM is None:
+            self.GMMs[str(signature)] = GMM  # new GMM
+            # recreate all numerical distributions as gmms
+        for each numerical param:
+            if np.random.rand() <= self.prior_freq:
+                sample from prior
+            else
+                sample from learned gmm
+
+        combined = combine signature with sampled dictionary
+        return combined
+
+'''

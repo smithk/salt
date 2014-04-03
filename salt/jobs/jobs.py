@@ -202,6 +202,7 @@ class DistributedJobManager(Process):
                     else:
                         if message_body == 'Finished':
                             pass
+                # TODO: receive status request, send status self.cluster.stats()
                 else:
                     print("MESSAGE UNKNOWN {0}".format(message))
 
@@ -301,7 +302,7 @@ class DistributedJobManager(Process):
 
                 if exception is not None:
                     if isinstance(exception, Exception):
-                        print("exception in {1}: {0}".format(exception, learner))
+                        #print("exception in {1}: {0}".format(exception, learner))
                         prediction_set.add(exception, repetition, fold)
                     else:  # TODO Repair data sending. It doesn't currently work
                         print("data not found, sending data for {0}, {1}".format(repetition, fold))
@@ -315,7 +316,7 @@ class DistributedJobManager(Process):
                     result_queue.put(prediction_set)
                     del self.active_configurations[learner][self._key(configuration)]
                     del self.active_jobs[learner][self._key(configuration)]
-                    print(self.cluster.stats())
+                    #print(self.cluster.stats())
                 else:
                     pass
             else:

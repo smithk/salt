@@ -147,7 +147,8 @@ class SaltMain(ttk.Frame):
         sizegrip = ttk.Sizegrip(statusbar)
 
         self.selected_optimizer = tk.StringVar()
-        optimizer_values = ('None (run with default parameters)', 'Random search', 'Shrinking hypercube')
+        optimizer_values = ('None (run with default parameters)', 'Random search',
+                            'Shrinking hypercube', 'Gaussian Mixture learning')
         optimizer_list = ttk.Combobox(statusbar, values=optimizer_values,
                                       textvariable=self.selected_optimizer,
                                       width=30, state='readonly')
@@ -400,13 +401,16 @@ class SaltMain(ttk.Frame):
                 #positions = np.vstack((positions, positions + 0.5))
                 default_data = self.default_results.values()  # [np.array(row) - 0.2 for row in data]
                 default_means = [np.mean(row) for row in default_data]
+                print("here1 {0}".format(data))
                 #self.summary_plot = self.subplot.boxplot(plot_data, positions=positions, widths=widths,  patch_artist=True, vert=False)
                 if show_defaults:
                     ghostcolor = '#aaaaaa'
                     edgecolor = '#efefef'
                     mediancolor = '#efefef'
                     alpha = 0.4
+                    print("here2 {0}".format(default_data))
                     a = self.subplot.boxplot(default_data, positions=positions + 0.325, widths=0.25, patch_artist=True, vert=False, notch=True)
+                    print("here3")
                     plt.setp(a['whiskers'], color=ghostcolor, linestyle='-', alpha=alpha, linewidth=1.2)
                     plt.setp(a['boxes'], color=ghostcolor, edgecolor=edgecolor, alpha=alpha)
                     plt.setp(a['caps'], color=ghostcolor, alpha=alpha, linewidth=1.2)
@@ -433,6 +437,7 @@ class SaltMain(ttk.Frame):
                 self.plot_means(means, vertical_offset=-offset)
                 if show_defaults:
                     self.plot_means(default_means, vertical_offset=0.325, alpha=0.4, boxheight=0.05)
+                print("here4")
                 self.summary_figure.tight_layout(rect=(0, 0.07, 1, 1))
                 #  Significantly different from the best (95% confidence)
             else:
@@ -680,6 +685,7 @@ class SaltMain(ttk.Frame):
             if len(global_results) == top_n:
                 self.tree_rank.delete(global_results[top_n - 1])
         if eval_result.configuration == {}:  # Default configuration
+            print("default found: {0}".format(vars(eval_result)))
             self.default_results[eval_result.learner] = \
                 [evaluation.score for evaluation in eval_result.evaluations]
             ordering = np.argsort(self.default_results.keys())
@@ -698,12 +704,16 @@ class SaltMain(ttk.Frame):
         learner_best = self.learner_best.get(eval_result.learner)
         if learner_best is None:
             learner_best = eval_result
+            print(eval_result.configuration)
             self.learner_best[eval_result.learner] = learner_best
             self.learner_best = OrderedDict(sorted(self.learner_best.items()))
+            print(self.learner_best.keys())
             self.update_plot_required = True
         else:
             if eval_result > learner_best:
                 self.learner_best[eval_result.learner] = eval_result
+                print(eval_result.configuration)
+                print(self.learner_best.keys())
                 self.update_plot_required = True
             else:
                 # Update axis only

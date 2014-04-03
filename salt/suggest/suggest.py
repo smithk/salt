@@ -142,7 +142,7 @@ class SuggestionTask(Process):
         setproctitle.setproctitle("SALT - {0}".format(self.learner))
         print("Learner {0} running. PID={1}".format(self.learner, os.getpid()))
         # Run learner with default parameters
-        configuration = self.optimizer.get_next_configuration()
+        configuration = {}  # self.optimizer.get_next_configuration()
         tasks_running = 0  # Task == running configuration
         try:
             while configuration is not None:
@@ -234,7 +234,7 @@ class SuggestionTask(Process):
 
             configuration = prediction_set.configuration
             evaluation_result_set = EvaluationResultSet(self.learner, configuration, metric_set)
-            if evaluation_result_set.configuration != {} or True:
+            if evaluation_result_set.configuration != {}:
                 self.optimizer.add_results(evaluation_result_set)
             if self.manager.console_queue is not None:
                 self.manager.console_queue.put(evaluation_result_set)
@@ -371,6 +371,7 @@ class SuggestionTaskManager():
         #self.lock.acquire()
         #print([result.scores for result in task.optimizer.evaluation_results], status)
         #print([result.mean for result in task.optimizer.evaluation_results], status)
+        '''
         if len(task.optimizer.evaluation_results) % 10 == 0:
             unique_id = id(self)
             new_filename = '{0}_{1}.dat'.format(task.learner, unique_id)
@@ -382,6 +383,7 @@ class SuggestionTaskManager():
                 pass
             for evaluation_result in task.optimizer.evaluation_results:
                 for evaluation in evaluation_result._evaluations:
+                    evaluation._expected = None
                     evaluation._predicted = None
                     evaluation._predicted_class = None
                     evaluation.baseline = None
@@ -392,7 +394,7 @@ class SuggestionTaskManager():
                 os.remove(new_path + "_old")
             except:
                 pass
-
+        '''
         suggestion_task_name = task.learner
         self.statuses[suggestion_task_name] = status
         task.optimizer.evaluation_results.reverse()
