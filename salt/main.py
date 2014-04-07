@@ -150,10 +150,18 @@ def run_cmdline(cmdline_options):
     parameter_space = create_parameter_space(learners, settings,
                                              AVAILABLE_REGRESSORS if is_regression
                                              else AVAILABLE_CLASSIFIERS)
-
     train_set, hold_out_set = ArffReader.load_dataset(dataset_path, is_regression, holdout)
     if not train_set:
         return  # break?
+
+    ######################
+    if optimizer == 'list':
+        parameter_space = {learner: read_configurations(learner) for learner in learners}
+        train_set = load_holdout(_os.path.basename(dataset_path) + "_holdout")
+        xval_repetitions, xval_folds = (15, 2)
+    else:
+        dump_dataset(hold_out_set, _os.path.basename(dataset_path) + "_holdout")
+    ######################
 
     train_set.initialize(xval_repetitions, xval_folds)
 
@@ -171,6 +179,47 @@ def run_cmdline(cmdline_options):
         suggestion_task_manager.run_tasks()
     except KeyboardInterrupt:
         print "Interrupted"
+
+
+def read_configurations(learner):
+    import cPickle
+    from itertools import chain
+
+    configurations = []
+    eof = False
+    input_file = open("data/{0}_candidates".format(learner))
+    while not eof:
+        try:
+            configurations.append(cPickle.load(input_file))
+        except EOFError:
+            eof = True
+    configurations = list(chain.from_iterable(configurations))
+    return configurations
+
+
+def load_holdout(filename):
+    import cPickle
+    try:
+        holdout = cPickle.load(open(filename))
+        return holdout
+    except Exception as e:
+        print("Error reading holdout set {0}: {1}".format(filename, e))
+
+
+def dump_dataset(dataset, filename):
+    import cPickle
+    try:
+        cPickle.dump(dataset, open(filename, 'w'))
+    except Exception as e:
+        print("Problem saving file {0}: {1}".format(filename, e))
+
+
+def load_dataset(filename):
+    import cPickle
+    try:
+        return cPickle.load(filename)
+    except Exception as e:
+        print("Problem reading file {0}: {1}".format(filename, e))
 
 
 def report_results(ranking):

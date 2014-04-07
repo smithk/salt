@@ -9,6 +9,7 @@ from ..data import PredictionSet
 from six import iteritems
 from dispy import JobCluster, DispyJob
 from collections import Mapping
+import numpy as np
 import os
 import gc
 import setproctitle
@@ -128,7 +129,7 @@ class LearningJob(object):
 
         # To be filled in by the learner
         self.prediction = None
-        self.runtime = None
+        self.runtime = np.inf
         self.exception = None
 
 
@@ -295,6 +296,7 @@ class DistributedJobManager(Process):
                 repetition = learning_job.repetition
                 fold = learning_job.fold
                 prediction = learning_job.prediction
+                runtime = learning_job.runtime
 
                 # TODO Test if notify_status happens on canceled jobs.
                 active_learner_configurations = self.active_configurations[learner]
@@ -303,14 +305,14 @@ class DistributedJobManager(Process):
                 if exception is not None:
                     if isinstance(exception, Exception):
                         #print("exception in {1}: {0}".format(exception, learner))
-                        prediction_set.add(exception, repetition, fold)
+                        prediction_set.add(exception, repetition, fold, runtime)
                     else:  # TODO Repair data sending. It doesn't currently work
                         print("data not found, sending data for {0}, {1}".format(repetition, fold))
                         ip_address = exception
                         self.send_data(ip_address, learning_job)
                         exception = None
                 else:
-                    prediction_set.add(prediction, repetition, fold)
+                    prediction_set.add(prediction, repetition, fold, runtime)
                 if all(prediction is not None for prediction in prediction_set.predictions):
                     result_queue = self.queues[learner]
                     result_queue.put(prediction_set)
@@ -480,6 +482,7 @@ class LocalJobManager(Process):
                 repetition = learning_job.repetition
                 fold = learning_job.fold
                 prediction = learning_job.prediction
+                runtime = learning_job.runtime
 
                 # TODO Test if notify_status happens on canceled jobs.
                 active_learner_configurations = self.active_configurations[learner]
@@ -488,14 +491,14 @@ class LocalJobManager(Process):
                 if exception is not None:
                     if isinstance(exception, Exception):
                         print("exception in {1}: {0}".format(exception, learner))
-                        prediction_set.add(exception, repetition, fold)
+                        prediction_set.add(exception, repetition, fold, runtime)
                     else:  # TODO Repair data sending. It doesn't currently work
                         print("data not found, sending data for {0}, {1}".format(repetition, fold))
                         ip_address = exception
                         self.send_data(ip_address, learning_job)
                         exception = None
                 else:
-                    prediction_set.add(prediction, repetition, fold)
+                    prediction_set.add(prediction, repetition, fold, runtime)
                 if all(prediction is not None for prediction in prediction_set.predictions):
                     result_queue = self.queues[learner]
                     result_queue.put_nowait(prediction_set)

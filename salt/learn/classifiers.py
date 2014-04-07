@@ -1027,7 +1027,7 @@ class KNNClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg_2(self):
         # WMINKOWSKI IS PROBLEMATIC
         from ..parameters import param
         param_space = param.ParameterSpace()
@@ -1053,6 +1053,38 @@ class KNNClassifier(BaseClassifier):
         param_space['algorithm'].categories['kd_tree']['metric'] = param_kd_tree_metric
         param_space['algorithm'].categories['kd_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
         param_space['algorithm'].categories['brute']['metric'] = param_brute_metric
+
+        # Numerical parameters
+        param_space['n_neighbors'] = param.NumericalParameter('n_neighbors', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=5, discretize=True)
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        # WMINKOWSKI IS PROBLEMATIC
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Categorical parameters
+        algorithm_cats = ['ball_tree', 'kd_tree', 'brute']
+        param_space['algorithm'] = param.CategoricalParameter('algorithm', algorithm_cats, default='auto')
+        for algorithm in algorithm_cats:
+            weights_cats = ['uniform', 'distance']
+            param_space['algorithm'].categories[algorithm]['weights'] = param.CategoricalParameter('weights', weights_cats, default='uniform')
+        kd_ball_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        kd_ball_tree_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        brute_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        brute_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        for weight in param_space['algorithm'].categories['ball_tree']['weights'].categories.values():
+            weight['metric'] = kd_ball_tree_metric
+            weight['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        for weight in param_space['algorithm'].categories['kd_tree']['weights'].categories.values():
+            weight['metric'] = kd_ball_tree_metric
+            weight['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        for weight in param_space['algorithm'].categories['brute']['weights'].categories.values():
+            weight['metric'] = brute_metric
 
         # Numerical parameters
         param_space['n_neighbors'] = param.NumericalParameter('n_neighbors', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=5, discretize=True)

@@ -171,9 +171,11 @@ class PredictionSet(object):
         self.folds = folds
         self.configuration = configuration
         self.predictions = [None] * repetitions * folds
+        self.runtimes = [np.inf] * repetitions * folds
 
-    def add(self, prediction, repetition, fold):
+    def add(self, prediction, repetition, fold, runtime):
         self.predictions[repetition * self.folds + fold] = prediction
+        self.runtimes[repetition * self.folds + fold] = runtime
 
     def get(self, repetition, fold):
         return self.predictions[repetition * self.folds + fold]

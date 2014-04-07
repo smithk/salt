@@ -33,13 +33,14 @@ class EvaluationResults(object):
 
 
 class EvaluationResultSet(object):
-    def __init__(self, learner, configuration, evaluations):
+    def __init__(self, learner, configuration, evaluations, average_runtime):
         self.learner = learner
         self.configuration = configuration
         self._evaluations = None
         self._mean = None
         self._scores = None
         self._set_evaluations(evaluations)
+        self.runtime = average_runtime
 
     def _set_evaluations(self, evaluations):
         self._scores = [evaluation.score for evaluation in evaluations]

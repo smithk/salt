@@ -22,8 +22,8 @@ class BaseOptimizer(object):
     def add_results(self, evaluation_results):
         #insort(self.evaluation_results, evaluation_results)
         self.evaluation_results.append(evaluation_results)
-        with open("data/{0}".format(evaluation_results.learner), 'a') as output:
-            cPickle.dump((evaluation_results._mean, evaluation_results.configuration), output)
+        with open("data/{0}_all".format(evaluation_results.learner), 'a') as output:
+            cPickle.dump((evaluation_results._mean, evaluation_results.runtime, evaluation_results.configuration), output)
         if evaluation_results > self.best:
             self.best = evaluation_results
 
@@ -274,6 +274,22 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         self.num_configs_tried += 1
         #print("now trying {0} ({1} configurations tried)".format(next_configuration, self.num_configs_tried))
         return next_configuration
+
+
+class ListOptimizer(object):
+    '''Evaluates configurations drawn from a list.'''
+    def __init__(self, configuration_list):
+        self.evaluation_results = []
+        self.configuration_list = configuration_list
+
+    def add_results(self, evaluation_results):
+        with open("data/{0}_evals".format(evaluation_results.learner), 'a') as output:
+            cPickle.dump((evaluation_results.scores, evaluation_results.runtime, evaluation_results.configuration), output)
+
+    def get_next_configuration(self):
+        if len(self.configuration_list) > 0:
+            print("testing one of {0} configurations".format(len(self.configuration_list)))
+            return self.configuration_list.pop()
 
 
 '''

@@ -39,7 +39,7 @@ class StringReader(BaseReader):
                             choices=AVAILABLE_CLASSIFIERS.keys() + AVAILABLE_REGRESSORS.keys(),
                             default=None)
         parser.add_argument('-o', '--optimizer', help='Optimizer',
-                            choices=AVAILABLE_OPTIMIZERS.keys(),
+                            choices=AVAILABLE_OPTIMIZERS.keys() + ['list'],
                             default='randomsearch')
         parser.add_argument('-g', '--gui', help="Use a graphical user interface",
                             action='store_true')

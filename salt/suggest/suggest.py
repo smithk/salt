@@ -5,6 +5,7 @@ from multiprocessing import Process, Queue, Lock, Manager
 from ..learn.classifiers import BaselineClassifier
 from ..learn.regressors import BaselineRegressor
 from ..optimize import AVAILABLE_OPTIMIZERS
+from ..optimize.optimize import ListOptimizer
 from ..jobs import LocalJobManager, DistributedJobManager
 from ..evaluate.metrics import ClassificationMetrics, RegressionMetrics
 from ..evaluate import EvaluationResultSet
@@ -55,6 +56,8 @@ class SuggestionTask(Process):
             self.optimizer = AVAILABLE_OPTIMIZERS['none'](self.parameters)
         elif optimizer in AVAILABLE_OPTIMIZERS:
             self.optimizer = AVAILABLE_OPTIMIZERS[optimizer](self.parameters)
+        elif type(self.parameters) is list:
+            self.optimizer = ListOptimizer(self.parameters)
         else:
             raise ValueError('Invalid optimization method')
         self.task_queue = task_queue
@@ -233,7 +236,11 @@ class SuggestionTask(Process):
                     metric_set = [ClassificationMetrics()]
 
             configuration = prediction_set.configuration
-            evaluation_result_set = EvaluationResultSet(self.learner, configuration, metric_set)
+            print("==============================")
+            print(prediction_set.learner)
+            print("==============================")
+            average_runtime = np.mean(prediction_set.runtimes if prediction_set.runtimes else np.inf)
+            evaluation_result_set = EvaluationResultSet(self.learner, configuration, metric_set, average_runtime)
             if evaluation_result_set.configuration != {}:
                 self.optimizer.add_results(evaluation_result_set)
             if self.manager.console_queue is not None:
