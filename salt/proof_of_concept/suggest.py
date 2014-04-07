@@ -183,10 +183,10 @@ def evaluate_model(model):
     return evaluation
 
 
-def dump_candidates(learner):
+def dump_candidates(path, learner):
     """Read _all files, filter best n per leaf and dump them to _candidates file."""
     #path = "/home/roger/salt/test_data/ecoli/data"
-    path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
+    #path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
     tree_structure = get_tree(learner)
     evaluation_list = load_list(get_filenames(path, "{0}_all".format(learner)))
     tree = list_to_tree(evaluation_list, tree_structure)
@@ -195,10 +195,10 @@ def dump_candidates(learner):
     #print("the candidates are {0}".format(candidates))
 
 
-def score_candidates(learner):
+def score_candidates(path, learner):
     """Read _evals file, build the tree, score and return."""
     #path = "/home/roger/salt/test_data/ecoli/data"
-    path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
+    #path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
     import warnings
     warnings.filterwarnings('ignore')
     tree_structure = get_tree(learner)
@@ -211,12 +211,22 @@ def score_candidates(learner):
 
 
 if __name__ == '__main__':
+    import sys
+    args = sys.argv[1:]
+    path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
+    learner = "KNNClassifier"
+    operation = "score"
+    if len(sys.argv) == 3:
+        path, learner, operation = args
+    print("path is '{0}', learner is {1}, operation is {2}".format(path, learner, operation))
+    print("operations: getcandidates | score")
     #path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
-    learner = 'KNNClassifier'
+    #learner = 'KNNClassifier'
 
-    # dump_candidates(learner)
-
-    score_candidates(learner)
+    if operation.lower() == 'getcandidates':
+        dump_candidates(path, learner)
+    else:
+        score_candidates(path, learner)
 
     #print_summary_tree(tree)
 
