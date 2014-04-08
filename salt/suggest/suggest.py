@@ -236,9 +236,6 @@ class SuggestionTask(Process):
                     metric_set = [ClassificationMetrics()]
 
             configuration = prediction_set.configuration
-            print("==============================")
-            print(prediction_set.learner)
-            print("==============================")
             average_runtime = np.mean(prediction_set.runtimes if prediction_set.runtimes else np.inf)
             evaluation_result_set = EvaluationResultSet(self.learner, configuration, metric_set, average_runtime)
             if evaluation_result_set.configuration != {}:

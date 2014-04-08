@@ -28,8 +28,8 @@ def get_k_means(evaluation_list, k=10):
     if len(evaluation_list) <= k:
         return evaluation_list
 
-    #scores = [score for score, runtime, config in evaluation_list]
-    scores = np.array([score for score, config in evaluation_list])
+    scores = np.array([score for score, runtime, config in evaluation_list])
+    #scores = np.array([score for score, config in evaluation_list])
     means, labels, error = k_means(np.atleast_2d(scores).T, k)
     selected_models = []
     for i in xrange(len(np.unique(means))):
@@ -192,6 +192,7 @@ def dump_candidates(path, learner):
     tree = list_to_tree(evaluation_list, tree_structure)
     candidates = get_candidates(tree, 10)
     cPickle.dump(candidates, open(os.path.join(os.path.abspath(path), "{0}_candidates".format(learner)), 'w'))
+    print("candidates dumped to {0}".format(os.path.join(os.path.abspath(path), "{0}_candidates".format(learner)), 'w'))
     #print("the candidates are {0}".format(candidates))
 
 
@@ -215,8 +216,8 @@ if __name__ == '__main__':
     args = sys.argv[1:]
     path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
     learner = "KNNClassifier"
-    operation = "score"
-    if len(sys.argv) == 3:
+    operation = "getcandidates"
+    if len(args) == 3:
         path, learner, operation = args
     print("path is '{0}', learner is {1}, operation is {2}".format(path, learner, operation))
     print("operations: getcandidates | score")
