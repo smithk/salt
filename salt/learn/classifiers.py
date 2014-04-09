@@ -176,7 +176,7 @@ class LogisticRegressionClassifier(BaseClassifier):
         return learner_options
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
         # Categorical parameters
@@ -185,6 +185,34 @@ class LogisticRegressionClassifier(BaseClassifier):
         param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', {True: 0.5, False: 0.5}, default=False)
         param_space['fit_intercept'].categories[True]['intercept_scaling'] = param.NumericalParameter('intercept_scaling', prior=param.Uniform(0.0, 1.0), default=0.0)
         param_space['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+
+        # Numerical parameters
+        param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=0, stdev=1), default=0.0001)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Categorical parameters
+
+        class_weight_branch = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+        fit_intercept_branch = param.CategoricalParameter('fit_intercept', {True: 0.5, False: 0.5}, default=False)
+        fit_intercept_branch.categories[True]['class_weight'] = class_weight_branch
+        fit_intercept_branch.categories[False]['class_weight'] = class_weight_branch
+
+        penalty_branch = param.CategoricalParameter('penalty', {'l1': 0.5, 'l2': 0.5}, default='l2')
+        penalty_branch.categories['l1']['fit_intercept'] = fit_intercept_branch
+
+        penalty_branch.categories['l2']['dual'] = param.CategoricalParameter('dual', {True: 0.5, False: 0.5}, default=False)
+        penalty_branch.categories['l2']['dual'].categories[True]['fit_intercept'] = fit_intercept_branch
+        penalty_branch.categories['l2']['dual'].categories[False]['fit_intercept'] = fit_intercept_branch
+        param_space['penalty'] = penalty_branch
 
         # Numerical parameters
         param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=0)
@@ -352,7 +380,7 @@ class SGDClassifier(BaseClassifier):
         return learner_options
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
         # Categorical parameters
@@ -380,6 +408,81 @@ class SGDClassifier(BaseClassifier):
         param_space['alpha'] = param.NumericalParameter('alpha', prior=param.Uniform(5e-5, 5e-4), default=1e-4)
         param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=5, discretize=True)
         param_space['eta0'] = param.NumericalParameter('eta0', prior=param.Uniform(lower=0.0, upper=1.0), default=0.0)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Numerical parameters
+        param_space['alpha'] = param.NumericalParameter('alpha', prior=param.Uniform(5e-5, 5e-4), default=1e-4)
+        param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=5, discretize=True)
+        param_space['eta0'] = param.NumericalParameter('eta0', prior=param.Uniform(lower=0.0, upper=1.0), default=0.0)
+
+        # Categorical parameters
+        loss_cats = ['hinge', 'log', 'modified_huber', 'squared_hinge', 'perceptron',
+                     'squared_loss', 'huber', 'epsilon_insensitive', 'squared_epsilon_insensitive']
+
+        param_space['loss'] = param.CategoricalParameter('loss', loss_cats, default='hinge')
+        loss_branch = param_space['loss'].categories
+
+        param_epsilon = param.NumericalParameter('epsilon', prior=param.LogNormal(mean=5.0, stdev=1.0), default=0.1)
+        loss_branch['huber']['epsilon'] = param_epsilon
+        loss_branch['epsilon_insensitive']['epsilon'] = param_epsilon
+        loss_branch['squared_epsilon_insensitive']['epsilon'] = param_epsilon
+
+        penalty_cats = ['l1', 'l2', 'elasticnet']
+        penalty_param = param.CategoricalParameter('penalty', penalty_cats, default='l2')
+        penalty_branch = penalty_param.categories
+        penalty_branch['elasticnet']['l1_ratio'] = param.NumericalParameter('dual', prior=param.Uniform(lower=0.0, upper=1.0), default=0.15)
+
+        warm_start_param = param.CategoricalParameter('warm_start', {True: 0.5, False: 0.5}, default=False)
+
+        class_weight_cats = [None, 'auto']
+        class_weight_param = param.CategoricalParameter('class_weight', class_weight_cats, default=None)
+        for class_weight in class_weight_cats:
+            class_weight_branch = class_weight_param.categories[class_weight]
+            class_weight_branch['warm_start'] = warm_start_param
+
+        learning_rate_cats = ['constant', 'optimal', 'invscaling']
+        learning_rate_param = param.CategoricalParameter('learning_rate',  learning_rate_cats, default='optimal')
+        for learning_rate in learning_rate_cats:
+            learning_rate_branch = learning_rate_param.categories[learning_rate]
+            learning_rate_branch['class_weight'] = class_weight_param
+        learning_rate_param.categories['invscaling']['power_t'] = param.NumericalParameter('power_t', prior=param.Uniform(lower=0.0, upper=1.0), default=0.5)
+
+        shuffle_cats = [True, False]
+        shuffle_param = param.CategoricalParameter('shuffle', shuffle_cats, default=False)
+        for shuffle in shuffle_cats:
+            shuffle_branch = shuffle_param.categories[shuffle]
+            shuffle_branch['learning_rate'] = learning_rate_param
+
+        fit_intercept_cats = [True, False]
+        fit_intercept_param = param.CategoricalParameter('fit_intercept', fit_intercept_cats, default=False)
+        for fit_intercept in fit_intercept_cats:
+            fit_intercept_branch = fit_intercept_param.categories[fit_intercept]
+            fit_intercept_branch['shuffle'] = shuffle_param
+
+        for penalty in penalty_cats:
+            penalty_branch = penalty_param.categories[penalty]
+            penalty_branch['fit_intercept'] = fit_intercept_param
+
+        for loss in loss_cats:
+            loss_branch = param_space['loss'].categories[loss]
+            loss_branch['penalty'] = penalty_param
+
+        '''
+        param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', {True: 0.5, False: 0.5}, default=False)
+        param_space['shuffle'] = param.CategoricalParameter('shuffle', {True: 0.5, False: 0.5}, default=False)
+        param_space['learning_rate'] = param.CategoricalParameter('learning_rate', {'constant': 0.33333, 'optimal': 0.33333, 'invscaling': 0.33333}, default='optimal')
+        param_space['learning_rate'].categories['invscaling']['power_t'] = param.NumericalParameter('power_t', prior=param.Uniform(lower=0.0, upper=1.0), default=0.5)
+        param_space['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+        param_space['warm_start'] = param.CategoricalParameter('warm_start', {True: 0.5, False: 0.5}, default=False)
+        '''
 
         # return learner_options
         learner_options = param_space.dump()
@@ -526,7 +629,7 @@ class PassiveAggressiveClassifier(BaseClassifier):
         return learner_options
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
         # Categorical parameters
@@ -540,6 +643,45 @@ class PassiveAggressiveClassifier(BaseClassifier):
         param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=0.0, stdev=1.0),
                                                          default=1, discretize=True,
                                                          valid_if="value > 0", when_invalid='resample')
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Numerical parameters
+        param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=1.0)
+        param_space['n_iter'] = param.NumericalParameter('n_iter', prior=param.LogNormal(mean=0.0, stdev=1.0),
+                                                         default=1, discretize=True,
+                                                         valid_if="value > 0", when_invalid='resample')
+
+        # Categorical parameters
+
+        warm_start_param = param.CategoricalParameter('warm_start', {True: 0.5, False: 0.5}, default=False)
+
+        shuffle_cats = [True, False]
+        shuffle_param = param.CategoricalParameter('shuffle', shuffle_cats, default=False)
+        for shuffle in shuffle_cats:
+            shuffle_branch = shuffle_param.categories[shuffle]
+            shuffle_branch['warm_start'] = warm_start_param
+
+        fit_intercept_cats = [True, False]
+        fit_intercept_param = param.CategoricalParameter('fit_intercept', fit_intercept_cats, default=True)
+        for fit_intercept in fit_intercept_cats:
+            fit_intercept_branch = fit_intercept_param.categories[fit_intercept]
+            fit_intercept_branch['shuffle'] = shuffle_param
+
+        loss_cats = ['hinge', 'squared_hinge']
+        loss_param = param.CategoricalParameter('loss', loss_cats, default='hinge')
+        for loss in loss_cats:
+            loss_branch = loss_param.categories[loss]
+            loss_branch['fit_intercept'] = fit_intercept_param
+
+        param_space['loss'] = loss_param
 
         # return learner_options
         learner_options = param_space.dump()
@@ -675,7 +817,7 @@ class RidgeClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
         # Categorical parameters
@@ -687,6 +829,44 @@ class RidgeClassifier(BaseClassifier):
         param_space['alpha'] = param.NumericalParameter('alpha', prior=param.LogNormal(mean=0.0, stdev=0.5), default=1.0)
         param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=np.log(0.001), stdev=0.5), default=0.001)
         param_space['max_iter'] = param.NumericalParameter('max_iter', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=None, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Categorical parameters
+        '''
+        param_space['fit_intercept'] = param.CategoricalParameter('fit_intercept', [True, False], default=True)
+        param_space['normalize'] = param.CategoricalParameter('fit_intercept', [True, False], default=True)
+        param_space['solver'] = param.CategoricalParameter('solver', ['svd', 'dense_cholesky', 'lsqr', 'sparse_cg'], default='auto')
+        '''
+
+        # Numerical parameters
+        param_space['alpha'] = param.NumericalParameter('alpha', prior=param.LogNormal(mean=0.0, stdev=0.5), default=1.0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=np.log(0.001), stdev=0.5), default=0.001)
+        param_space['max_iter'] = param.NumericalParameter('max_iter', prior=param.LogNormal(mean=np.log(5), stdev=1.0), default=None, discretize=True)
+
+        normalize_cats = [True, False]
+        normalize_param = param.CategoricalParameter('normalize', normalize_cats, default=True)
+
+        fit_intercept_cats = [True, False]
+        fit_intercept_param = param.CategoricalParameter('fit_intercept', fit_intercept_cats, default=True)
+        for fit_intercept in fit_intercept_cats:
+            fit_intercept_branch = fit_intercept_param.categories[fit_intercept]
+            fit_intercept_branch['normalize'] = normalize_param
+
+        solver_cats = ['svd', 'dense_cholesky', 'lsqr', 'sparse_cg']
+        solver_param = param.CategoricalParameter('solver', solver_cats, default='auto')
+        for solver in solver_cats:
+            solver_branch = solver_param.categories[solver]
+            solver_branch['fit_intercept'] = fit_intercept_param
+
+        param_space['solver'] = solver_param
 
         # return learner_options
         learner_options = param_space.dump()
@@ -1227,7 +1407,7 @@ class RadiusNeighborsClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         # WMINKOWSKI IS PROBLEMATIC
         from ..parameters import param
         param_space = param.ParameterSpace()
@@ -1253,6 +1433,59 @@ class RadiusNeighborsClassifier(BaseClassifier):
         param_space['algorithm'].categories['kd_tree']['metric'] = param_kd_tree_metric
         param_space['algorithm'].categories['kd_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
         param_space['algorithm'].categories['brute']['metric'] = param_brute_metric
+
+        # Numerical parameters
+        param_space['radius'] = param.NumericalParameter('radius', prior=param.LogUniform(lower=-10.0, upper=10.0), default=1.0)
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        # WMINKOWSKI IS PROBLEMATIC
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Categorical parameters
+        '''
+        param_space['weights'] = param.CategoricalParameter('weights', ['uniform', 'distance'], default='uniform')
+        param_space['algorithm'] = param.CategoricalParameter('algorithm', ['ball_tree', 'kd_tree', 'brute'], default='auto')
+        param_ball_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_ball_tree_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        param_kd_tree_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_kd_tree_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+        param_brute_metric = param.CategoricalParameter('metric', ['euclidean', 'manhattan', 'chebyshev', 'minkowski'], default='minkowski')
+        param_brute_metric.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+
+        param_space['algorithm'].categories['ball_tree']['metric'] = param_ball_tree_metric
+        param_space['algorithm'].categories['ball_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        param_space['algorithm'].categories['kd_tree']['metric'] = param_kd_tree_metric
+        param_space['algorithm'].categories['kd_tree']['leaf_size'] = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        param_space['algorithm'].categories['brute']['metric'] = param_brute_metric
+        '''
+
+        weights_cats = ['uniform', 'distance']
+        weights_param = param.CategoricalParameter('weights', weights_cats, default='uniform')
+
+        metric_cats = ['euclidean', 'manhattan', 'chebyshev', 'minkowski']
+        metric_param = param.CategoricalParameter('metric', metric_cats, default='minkowski')
+        metric_param.categories['minkowski']['p'] = param.NumericalParameter('p', prior=param.Uniform(1, 20), default=2, discretize=True)
+
+        for metric in metric_cats:
+            metric_branch = metric_param.categories[metric]
+            metric_branch['weights'] = weights_param
+
+        algorithm_cats = ['ball_tree', 'kd_tree', 'brute']
+        algorithm_param = param.CategoricalParameter('algorithm', algorithm_cats, default='auto')
+        leaf_size_param = param.NumericalParameter('leaf_size', prior=param.Uniform(lower=15, upper=45), default=30, discretize=True)
+        algorithm_param.categories['ball_tree']['leaf_size'] = leaf_size_param
+        algorithm_param.categories['kd_tree']['leaf_size'] = leaf_size_param
+        for algorithm in algorithm_cats:
+            algorithm_branch = algorithm_param.categories[algorithm]
+            algorithm_branch['metric'] = metric_param
+
+        param_space['algorithm'] = algorithm_param
 
         # Numerical parameters
         param_space['radius'] = param.NumericalParameter('radius', prior=param.LogUniform(lower=-10.0, upper=10.0), default=1.0)
@@ -1354,6 +1587,24 @@ class NearestCentroidClassifier(BaseClassifier):
         learner_parameters = parameters['Classifiers']['NearestCentroidClassifier']
         param_space = param.ParameterSpace.load(learner_parameters)
         return param_space
+
+    @classmethod
+    def get_default_cfg2(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['metric'] = param.CategoricalParameter('metric', ['euclidean', 'l1', 'l2', 'manhattan', 'cityblock', 'braycurtis',
+                                                                      'canberra', 'chebyshev', 'correlation', 'cosine', 'dice', 'hamming',
+                                                                      'jaccard', 'kulsinski', 'mahalanobis',
+                                                                      'matching', 'minkowski', 'rogerstanimoto',
+                                                                      'russellrao', 'seuclidean', 'sokalmichener',
+                                                                      'sokalsneath', 'sqeuclidean', 'yule'], default='euclidean')
+        param_space['shrink_threshold'] = param.NumericalParameter('shrink_threshold', prior=param.LogUniform(lower=-10.0, upper=10.0), default=None)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
 
     @classmethod
     def get_default_cfg(self):
@@ -1516,7 +1767,7 @@ class DecisionTreeClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
 
@@ -1530,6 +1781,32 @@ class DecisionTreeClassifier(BaseClassifier):
         param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
         param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
         param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Common numerical hyperparameters
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        criterion_cats = ['gini', 'entropy']
+        param_space['criterion'] = param.CategoricalParameter('criterion', criterion_cats, default='gini')
+        for criterion in criterion_cats:
+            max_features_use_preset_cats = [True, False]
+            criterion_branch = param_space['criterion'].categories[criterion]
+            criterion_branch['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', max_features_use_preset_cats, default=False)
+            max_features_use_preset = criterion_branch['max_features_use_preset'].categories[True]
+            max_features_use_preset['max_features_preset'] = param.CategoricalParameter('max_features_preset', ['sqrt', 'log2', None], default=None)
+            max_features_dont_use_preset = criterion_branch['max_features_use_preset'].categories[False]
+            max_features_dont_use_preset['max_features_sample'] = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
 
         # return learner_options
         learner_options = param_space.dump()
@@ -1743,7 +2020,7 @@ class RandomForestClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
 
@@ -1760,6 +2037,41 @@ class RandomForestClassifier(BaseClassifier):
         param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
         param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
         param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Common numerical hyperparameters
+        param_space['n_estimators'] = param.NumericalParameter('n_estimators', prior=param.Uniform(lower=2, upper=20), default=10, discretize=True)
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        bootstrap_branch = param.CategoricalParameter('bootstrap', [True, False], default=True)
+        bootstrap_branch.categories[True]['oob_score'] = param.CategoricalParameter('oob_score', [True, False], default=False)
+
+        criterion_cats = ['gini', 'entropy']
+        param_space['criterion'] = param.CategoricalParameter('criterion', criterion_cats, default='gini')
+        for criterion in criterion_cats:
+            max_features_use_preset_cats = [True, False]
+            criterion_branch = param_space['criterion'].categories[criterion]
+            criterion_branch['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', max_features_use_preset_cats, default=False)
+            max_features_use_preset = criterion_branch['max_features_use_preset'].categories[True]
+            preset_cats = ['sqrt', 'log2', None]
+            max_features_use_preset['max_features_preset'] = param.CategoricalParameter('max_features_preset', preset_cats, default=None)
+            for preset in preset_cats:
+                preset_branch = max_features_use_preset['max_features_preset'].categories[preset]
+                preset_branch['bootstrap'] = bootstrap_branch
+            max_features_dont_use_preset = criterion_branch['max_features_use_preset'].categories[False]
+            max_features_dont_use_preset['max_features_sample'] = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
+            max_features_dont_use_preset['bootstrap'] = bootstrap_branch
 
         # return learner_options
         learner_options = param_space.dump()
@@ -1937,7 +2249,7 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
 
@@ -1954,6 +2266,41 @@ class ExtraTreeEnsembleClassifier(BaseClassifier):
         param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
         param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
         param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Common numerical hyperparameters
+        param_space['n_estimators'] = param.NumericalParameter('n_estimators', prior=param.Uniform(lower=2, upper=20), default=10, discretize=True)
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        bootstrap_branch = param.CategoricalParameter('bootstrap', [True, False], default=False)
+        bootstrap_branch.categories[True]['oob_score'] = param.CategoricalParameter('oob_score', [True, False], default=False)
+
+        criterion_cats = ['gini', 'entropy']
+        param_space['criterion'] = param.CategoricalParameter('criterion', criterion_cats, default='gini')
+        for criterion in criterion_cats:
+            max_features_use_preset_cats = [True, False]
+            criterion_branch = param_space['criterion'].categories[criterion]
+            criterion_branch['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', max_features_use_preset_cats, default=False)
+            max_features_use_preset = criterion_branch['max_features_use_preset'].categories[True]
+            preset_cats = ['sqrt', 'log2', None]
+            max_features_use_preset['max_features_preset'] = param.CategoricalParameter('max_features_preset', preset_cats, default=None)
+            for preset in preset_cats:
+                preset_branch = max_features_use_preset['max_features_preset'].categories[preset]
+                preset_branch['bootstrap'] = bootstrap_branch
+            max_features_dont_use_preset = criterion_branch['max_features_use_preset'].categories[False]
+            max_features_dont_use_preset['max_features_sample'] = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
+            max_features_dont_use_preset['bootstrap'] = bootstrap_branch
 
         # return learner_options
         learner_options = param_space.dump()
@@ -2139,7 +2486,7 @@ class GradientBoostingClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
 
@@ -2149,6 +2496,30 @@ class GradientBoostingClassifier(BaseClassifier):
         param_space['max_features_use_preset'].categories[True]['max_features_preset'] = param_max_features_preset
         param_max_features_sample = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
         param_space['max_features_use_preset'].categories[False]['max_features_sample'] = param_max_features_sample
+
+        param_space['learning_rate'] = param.NumericalParameter('learning_rate', prior=param.Uniform(lower=0.0, upper=1.0), default=0.1)
+        param_space['n_estimators'] = param.NumericalParameter('n_estimators', prior=param.Uniform(lower=2, upper=20), default=10, discretize=True)
+        param_space['max_depth'] = param.NumericalParameter('max_depth', prior=param.LogUniform(lower=0.0, upper=5.0), default=None, discretize=True)
+        param_space['min_samples_split'] = param.NumericalParameter('min_samples_split', prior=param.Uniform(lower=2, upper=20), default=2, discretize=True)
+        param_space['min_samples_leaf'] = param.NumericalParameter('min_samples_leaf', prior=param.Uniform(lower=1, upper=20), default=1, discretize=True)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        param_space['loss'] = param.CategoricalParameter('loss', ['deviance'], default='deviance')
+        loss_branch = param_space['loss'].categories['deviance']
+        loss_branch['max_features_use_preset'] = param.CategoricalParameter('max_features_use_preset', [True, False], default=False)
+        param_max_features_preset = param.CategoricalParameter('max_features_preset', ['sqrt', 'log2', None], default=None)
+        loss_branch['max_features_use_preset'].categories[True]['max_features_preset'] = param_max_features_preset
+        param_max_features_sample = param.NumericalParameter('max_features_sample', prior=param.Uniform(0.0, 1.0), default=1.0)
+        loss_branch['max_features_use_preset'].categories[False]['max_features_sample'] = param_max_features_sample
 
         param_space['learning_rate'] = param.NumericalParameter('learning_rate', prior=param.Uniform(lower=0.0, upper=1.0), default=0.1)
         param_space['n_estimators'] = param.NumericalParameter('n_estimators', prior=param.Uniform(lower=2, upper=20), default=10, discretize=True)
@@ -2535,7 +2906,7 @@ class SVMClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
 
@@ -2555,6 +2926,45 @@ class SVMClassifier(BaseClassifier):
         # Numerical parameters
         param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=0)
         param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.001)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        # Common numerical hyperparameters
+        C = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=0)
+        tol = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.001)
+
+        kernel_cats = ['linear', 'poly', 'rbf', 'sigmoid']
+        param_space['kernel'] = param.CategoricalParameter('kernel', kernel_cats, default='rbf')
+        for kernel in kernel_cats:
+            shrinking_cats = [True, False]
+            kernel_branch = param_space['kernel'].categories[kernel]
+            kernel_branch['shrinking'] = param.CategoricalParameter('shrinking', shrinking_cats, default=False)
+            for shrinking in shrinking_cats:
+                class_weight_cats = [None, 'auto']
+                shrinking_branch = kernel_branch['shrinking'].categories[shrinking]
+                shrinking_branch['class_weight'] = param.CategoricalParameter('class_weight', class_weight_cats, default=None)
+                for class_weight in class_weight_cats:  # Maybe this is not needed
+                    class_weight_branch = shrinking_branch['class_weight'].categories[class_weight]
+                    class_weight_branch['C'] = C
+                    class_weight_branch['tol'] = tol
+
+        param_degree = param.NumericalParameter('degree', prior=param.Uniform(2, 5), default=3, discretize=True)
+        param_gamma = param.NumericalParameter('gamma', prior=param.Uniform(), default=0.0)
+        param_coef0 = param.NumericalParameter('coef0', prior=param.Uniform(), default=0.0)
+        param_space['kernel'].categories['poly']['degree'] = param_degree
+        param_space['kernel'].categories['poly']['gamma'] = param_gamma
+        param_space['kernel'].categories['poly']['coef0'] = param_coef0
+        param_space['kernel'].categories['rbf']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['coef0'] = param_coef0
 
         # return learner_options
         learner_options = param_space.dump()
@@ -2736,7 +3146,7 @@ class LinearSVMClassifier(BaseClassifier):
         return param_space
 
     @classmethod
-    def get_default_cfg(self):
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
 
@@ -2749,6 +3159,39 @@ class LinearSVMClassifier(BaseClassifier):
         # Numerical parameters
         param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=1.0)
         param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.0001)
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+        # Numerical parameters
+        param_space['C'] = param.NumericalParameter('C', prior=param.LogUniform(-10.0, 10.0), default=1.0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.0001)
+
+        multi_class_cats = ['ovr', 'crammer_singer']
+        param_space['multi_class'] = param.CategoricalParameter('multi_class', multi_class_cats, default='ovr')
+        ovr_branch = param_space['multi_class'].categories['ovr']
+        ovr_valid_cats = ['l1_l2_False', 'l2_l1_True', 'l2_l2_True', 'l2_l2_False']
+        ovr_branch['ovr_valid'] = param.CategoricalParameter('ovr_valid', ovr_valid_cats, default='l2_l2_True')
+        for ovr_valid in ovr_valid_cats:
+            fit_intercept_cats = [True, False]
+            ovr_valid_branch = ovr_branch['ovr_valid'].categories[ovr_valid]
+            ovr_valid_branch['fit_intercept'] = param.CategoricalParameter('fit_intercept', fit_intercept_cats, default=False)
+            for fit_intercept in fit_intercept_cats:
+                fit_intercept_branch = ovr_valid_branch['fit_intercept'].categories[fit_intercept]
+                fit_intercept_branch['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
+
+        crammer_singer_branch = param_space['multi_class'].categories['crammer_singer']
+        fit_intercept_cats = [True, False]
+        crammer_singer_branch['fit_intercept'] = param.CategoricalParameter('fit_intercept', fit_intercept_cats, default=False)
+        for fit_intercept in fit_intercept_cats:
+            fit_intercept_branch = crammer_singer_branch['fit_intercept'].categories[fit_intercept]
+            fit_intercept_branch['class_weight'] = param.CategoricalParameter('class_weight', {None: 0.5, 'auto': 0.5}, default=None)
 
         # return learner_options
         learner_options = param_space.dump()
@@ -2890,6 +3333,60 @@ class NuSVMClassifier(BaseClassifier):
 
     @classmethod
     def get_default_cfg(self):
+        from ..parameters import param
+        param_space = param.ParameterSpace()
+
+        '''
+        param_space['kernel'] = param.CategoricalParameter('kernel', ['linear', 'poly', 'rbf', 'sigmoid'], default='rbf')
+        param_degree = param.NumericalParameter('degree', prior=param.Uniform(2, 5), default=3, discretize=True)
+        param_gamma = param.NumericalParameter('gamma', prior=param.Uniform(), default=0.0)
+        param_coef0 = param.NumericalParameter('coef0', prior=param.Uniform(), default=0.0)
+        param_space['kernel'].categories['poly']['degree'] = param_degree
+        param_space['kernel'].categories['poly']['gamma'] = param_gamma
+        param_space['kernel'].categories['poly']['coef0'] = param_coef0
+        param_space['kernel'].categories['rbf']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['gamma'] = param_gamma
+        param_space['kernel'].categories['sigmoid']['coef0'] = param_coef0
+        param_space['shrinking'] = param.CategoricalParameter('shrinking', {True: 0.5, False: 0.5}, default=False)
+        '''
+
+        # Numerical parameters
+        param_space['nu'] = param.NumericalParameter('nu', prior=param.Uniform(), default=0)
+        param_space['tol'] = param.NumericalParameter('tol', prior=param.LogNormal(mean=-5, stdev=0.5), default=0.5)
+
+        shrinking_cats = [True, False]
+        shrinking_param = param.CategoricalParameter('shrinking', shrinking_cats, default=False)
+
+        kernel_cats = ['linear', 'poly', 'rbf', 'sigmoid']
+        kernel_param = param.CategoricalParameter('kernel',  kernel_cats, default='rbf')
+        for kernel in kernel_cats:
+            kernel_branch = kernel_param.categories[kernel]
+            kernel_branch['shrinking'] = shrinking_param
+
+        param_degree = param.NumericalParameter('degree', prior=param.Uniform(2, 5), default=3, discretize=True)
+        param_gamma = param.NumericalParameter('gamma', prior=param.Uniform(), default=0.0)
+        param_coef0 = param.NumericalParameter('coef0', prior=param.Uniform(), default=0.0)
+        kernel_param.categories['poly']['degree'] = param_degree
+        kernel_param.categories['poly']['gamma'] = param_gamma
+        kernel_param.categories['poly']['coef0'] = param_coef0
+
+        #param_space['kernel'].categories['poly']['shrinking'] = shrinking_param
+        #param_space['kernel'].categories['poly']['shrinking'] = shrinking_param
+        #param_space['kernel'].categories['poly']['shrinking'] = shrinking_param
+        #param_space['kernel'].categories['poly']['shrinking'] = shrinking_param
+
+        kernel_param.categories['rbf']['gamma'] = param_gamma
+        kernel_param.categories['sigmoid']['gamma'] = param_gamma
+        kernel_param.categories['sigmoid']['coef0'] = param_coef0
+        param_space['kernel'] = kernel_param
+
+        # return learner_options
+        learner_options = param_space.dump()
+        learner_options['enabled'] = '$True'
+        return learner_options
+
+    @classmethod
+    def get_default_cfg2(self):
         from ..parameters import param
         param_space = param.ParameterSpace()
 

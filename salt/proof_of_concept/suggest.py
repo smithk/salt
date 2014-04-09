@@ -21,7 +21,9 @@ def insert(evaluation, tree_structure):
     else:
         cat_param_name, cat_values = tree_structure
         score, runtime, configuration = evaluation  # unpack
-        insert(evaluation, cat_values[configuration[cat_param_name]])
+        category = configuration[cat_param_name]
+        category = ('$' if type(category) not in (str, np.string_) else '') + str(category)
+        insert(evaluation, cat_values[category])
 
 
 def get_k_means(evaluation_list, k=10):
@@ -32,7 +34,8 @@ def get_k_means(evaluation_list, k=10):
     #scores = np.array([score for score, config in evaluation_list])
     means, labels, error = k_means(np.atleast_2d(scores).T, k)
     selected_models = []
-    for i in xrange(len(np.unique(means))):
+    #for i in xrange(len(np.unique(means))):
+    for i in np.unique(labels):
         indices = np.argwhere(labels == i)
         best = np.argmax(scores[indices])
         for index in indices[best]:
@@ -69,7 +72,7 @@ def get_best(tree_structure, top_n=5, n_means=10, prefix='', alpha=0.05):
     df = max(abs(len(all_scores[0]) - k), 2)
     pvalues = np.array([p_stud(q, k, df) for q in statistics])
     #selected_model_indices = np.argwhere(pvalues >= alpha)  # Discard significantly different models
-    selected_model_indices = np.argwhere(pvalues >= 0.00)  # Discard significantly different models
+    selected_model_indices = np.argwhere(pvalues >= 0.05)  # Discard significantly different models
 
     evaluations = [evaluate_model(candidate_models[i]) for i in selected_model_indices]
     ranking = get_global_ranking(evaluations)
@@ -80,7 +83,7 @@ def get_best(tree_structure, top_n=5, n_means=10, prefix='', alpha=0.05):
     #print(prefix + cat_param_name)
     '''
     for i in xrange(min(20, len(selected_models))):
-        print(prefix + str(selected_models[i]))
+        print(prefix + str(selected_models[i][2]))
     '''
     return selected_models
 
@@ -204,6 +207,7 @@ def score_candidates(path, learner):
     warnings.filterwarnings('ignore')
     tree_structure = get_tree(learner)
     evaluation_list = load_list(get_filenames(path, "{0}_evals".format(learner)))
+    print("Analyzing {0} configurations".format(len(evaluation_list)))
     tree = list_to_tree(evaluation_list, tree_structure)
     best = get_best(tree, 10, 10, alpha=0.05)
     print("Best models: {0}".format(len(best)))
@@ -214,9 +218,16 @@ def score_candidates(path, learner):
 if __name__ == '__main__':
     import sys
     args = sys.argv[1:]
+    '''
     path = "/home/roger/salt/code/data/standard_ml_sets/classification/data"
     learner = "KNNClassifier"
     operation = "getcandidates"
+    '''
+    path = "/tmp/salt/data"
+    learner = "NuSVMClassifier"
+    #operation = "getcandidates"
+    operation = "score"
+
     if len(args) == 3:
         path, learner, operation = args
     print("path is '{0}', learner is {1}, operation is {2}".format(path, learner, operation))

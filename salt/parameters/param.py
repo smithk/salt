@@ -284,6 +284,7 @@ class GaussianMixture(Distribution):
         y_points = np.exp(self.gmm.score(x_points))
         return x_points, y_points
 
+
 class ParameterSpace(object):
     """Describes the parameter space"""
     def __init__(self, name='default', categorical_params=None, numerical_params=None):
