@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 import numpy as np
 import glob
 import os
@@ -30,7 +31,7 @@ def get_k_means(evaluation_list, k=10):
     if len(evaluation_list) <= k:
         return evaluation_list
 
-    scores = np.array([score for score, runtime, config in evaluation_list])
+    scores = np.array([np.mean(score) for score, runtime, config in evaluation_list])
     #scores = np.array([score for score, config in evaluation_list])
     means, labels, error = k_means(np.atleast_2d(scores).T, k)
     selected_models = []
@@ -109,7 +110,8 @@ def load_list(filenames):
         while evaluation is not None:
             try:
                 evaluation = cPickle.load(evaluation_file)
-                evaluation_list.append(evaluation)
+                if evaluation[-1] != {}:
+                    evaluation_list.append(evaluation)
             except EOFError:
                 evaluation = None
         evaluation_file.close()
@@ -212,7 +214,9 @@ def score_candidates(path, learner):
     best = get_best(tree, 10, 10, alpha=0.05)
     print("Best models: {0}".format(len(best)))
     for b in best:
-        print("ranking scores: {0}".format(evaluate_model(b)))
+        print("{0}. Ranking scores: {1}".format(b, evaluate_model(b)))
+    if len(best) > 0:
+        cPickle.dump(best[0][0], open(os.path.join(path, "{0}_best".format(learner)), 'w'))
 
 
 if __name__ == '__main__':
@@ -223,9 +227,9 @@ if __name__ == '__main__':
     learner = "KNNClassifier"
     operation = "getcandidates"
     '''
-    path = "/tmp/salt/data"
+    path = "/home/roger/thesis/data_analysis/data"
     learner = "NuSVMClassifier"
-    #operation = "getcandidates"
+    operation = "getcandidates"
     operation = "score"
 
     if len(args) == 3:

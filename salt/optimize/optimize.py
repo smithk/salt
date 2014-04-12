@@ -283,8 +283,12 @@ class ListOptimizer(object):
         self.configuration_list = configuration_list
 
     def add_results(self, evaluation_results):
-        with open("data/{0}_evals".format(evaluation_results.learner), 'a') as output:
-            cPickle.dump((evaluation_results.scores, evaluation_results.runtime, evaluation_results.configuration), output)
+        if evaluation_results.configuration == {}:
+            with open("data/{0}_default".format(evaluation_results.learner), 'a') as output:
+                cPickle.dump(evaluation_results.scores, output)
+        else:
+            with open("data/{0}_evals".format(evaluation_results.learner), 'a') as output:
+                cPickle.dump((evaluation_results.scores, evaluation_results.runtime, evaluation_results.configuration), output)
 
     def get_next_configuration(self):
         if len(self.configuration_list) > 0:

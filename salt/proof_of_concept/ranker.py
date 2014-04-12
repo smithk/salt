@@ -25,10 +25,10 @@ def get_ranking(item_list, criterion, decreasing=True):
     return ranking
 
 
-ranking_weights = {'score': 0.3,
-                   'speed': 0.2,
-                   'simplicity': 0.2,
-                   'stability': 0.3,
+ranking_weights = {'score': 0.5,
+                   'speed': 0.25,
+                   'simplicity': 0.1,
+                   'stability': 0.15,
                    'interpretability': 0.0,
                    'failurerate': 0.0}
 ranking_weights = OrderedDict(sorted(ranking_weights.items()))
@@ -60,7 +60,6 @@ def get_global_ranking(item_list):
     #general_ordering = np.argsort(ranking)
     #ranked_list = [item_list[order] for order in general_ordering]
     return ranking
-
 
 
 if __name__ == '__main__':

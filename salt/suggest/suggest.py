@@ -238,7 +238,7 @@ class SuggestionTask(Process):
             configuration = prediction_set.configuration
             average_runtime = np.mean(prediction_set.runtimes if prediction_set.runtimes else np.inf)
             evaluation_result_set = EvaluationResultSet(self.learner, configuration, metric_set, average_runtime)
-            if evaluation_result_set.configuration != {}:
+            if evaluation_result_set.configuration != {} or type(self.optimizer) is ListOptimizer:
                 self.optimizer.add_results(evaluation_result_set)
             if self.manager.console_queue is not None:
                 self.manager.console_queue.put(evaluation_result_set)
