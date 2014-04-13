@@ -1,6 +1,9 @@
 import numpy as np
+from six import iteritems
+import glob
 import sys
 import os
+from types import NoneType
 from matplotlib import use as set_backend
 from salt.evaluate.evaluate import format_p_value
 set_backend('Agg')
@@ -8,6 +11,8 @@ import matplotlib.pyplot as plt
 from collections import OrderedDict
 import cPickle
 from salt.evaluate.evaluate import get_statistics, p_stud
+from suggest import list_to_tree, load_list, get_tree
+from salt.parameters.param import GaussianMixture
 
 
 def setup_subplot(subplot, dataset_name, alpha):
@@ -86,7 +91,7 @@ def display_optimized_default_chart(dataset_name, default_data, optimized_data, 
                 plot_means(subplot, default_means, vertical_offset=0.325, alpha=0.4, boxheight=0.05)
             plt.tight_layout(rect=(0, 0.07, 1, 1))
             #  Significantly different from the best (95% confidence)
-            plt.savefig("figures/optimized_vs_default_{0}.png".format(dataset_name))
+            plt.savefig("/tmp/figures/optimized_vs_default_{0}.png".format(dataset_name))
             #plt.show(block=True)
         else:
             for i in range(len(means)):
@@ -164,7 +169,7 @@ def setup_boxplot(subplot, summary_plot, pvalue_axis, names, pvalues, accept, be
 
 def load_scores(dataset_path, learner_name, prefix):
     # load scores for first configuration in the file
-    _scores = [-1000] * 90
+    _scores = [0] * 90
     try:
         path = os.path.join(dataset_path, "data", "{0}_{1}".format(learner_name, prefix))
         print(path)
@@ -234,7 +239,7 @@ def get_worst_best_optimal(dataset_path):
                                for learner_name in learner_names])
     optimized_scores = [np.mean(load_optimized_scores(dataset_path, learner_name))
                         for learner_name in learner_names]
-    return min(default_scores[default_scores != -1000]), max(default_scores), max(optimized_scores)
+    return min(default_scores[default_scores != 0]), max(default_scores), max(optimized_scores)
 
 
 def make_plot_improvement_comparison():
@@ -254,18 +259,110 @@ def make_plot_improvement_comparison():
 
 def generate_comparison_table_entry(dataset_path):
     worst, best, optimal = get_worst_best_optimal(dataset_path)
-    with open("figures/comparison_table.txt", 'a') as output_file:
-        output_file.write("{0} & {1:.4} & {2:.4} & {3:.4} \\\\".format(dataset_name, worst, best, optimal))
+    with open("/tmp/figures/comparison_table.txt", 'a') as output_file:
+        output_file.write("{0} & {1:.4} & {2:.4} & {3:.4} \\\\\n".format(dataset_name, worst, best, optimal))
+
+
+def make_plot_learned_distribution_vs_random(dataset_path):
+    original = np.random.normal(0.8, 0.1, 80) * np.linspace(0, 1, 80)
+    learned = np.random.normal(0.8, 0.1, 80) * np.linspace(0, 1.5, 80)
+    current_best_original = [np.max(original[:i + 1]) for i in xrange(len(original) - 1)]
+    current_best_learned = [np.max(learned[:i + 1]) for i in xrange(len(learned) - 1)]
+    best_original, = plt.plot(current_best_original, lw=2.5, color='k')
+    _original, = plt.plot(original, lw=0.5, color='k', alpha=0.5)
+    best_learned, = plt.plot(current_best_learned, lw=2.5, color='b')
+    _learned, = plt.plot(learned, lw=0.5, color='b', alpha=0.5)
+    plt.legend([best_learned, best_original], ["Parametric Density Estimation", "Random search"],
+               loc=4)
+    plt.xlabel("Number of configurations evaluated")
+    plt.ylabel("Best performance index found")
+    plt.ylim([0, 1])
+    plt.show(block=True)
+
+
+def make_plot_learned_components():
+    filenames = glob.glob("/home/roger/thesis/data_analysis/standard/case_study/*DecisionTreeClassifier_all")
+    #tree_structure = get_tree('DecisionTreeClassifier')
+    evaluation_list = []
+    for filename in filenames:
+        tree_structure = get_tree('DecisionTreeClassifier')
+        print(filename)
+        evaluation_list.extend(load_list([filename]))
+        print(evaluation_list[0])
+
+    tree = list_to_tree(evaluation_list, tree_structure)
+    filename = "AllDatasets"
+    make_plot_for_tree(filename.split('/')[-1], tree)
+
+
+def train(gmm, key, evaluations):
+    scores = np.array([evaluation[0] for evaluation in evaluations])
+    values = np.array([evaluation[-1][key] for evaluation in evaluations])
+    lower = np.min(values)
+    upper = np.max(values)
+    max_param = np.max(scores)
+    scores = scores / max_param
+    selection = np.random.rand(len(scores))
+    selection = selection <= scores
+    selection = values[selection]
+
+    '''
+    chunk_size = 30
+    num_evaluations = len(selection)
+    pos = 0
+    while pos < num_evaluations:
+        chunk = selection[pos:pos + chunk_size]
+        print(chunk)
+        gmm.combine(chunk)
+        pos += chunk_size
+    '''
+    gmm.gmm.n_components = 8
+    gmm.fit(selection)
+    print(vars(gmm.gmm))
+    return (lower, upper)
+
+
+def plot_distribution(distribution, signature, dataset, hyperparameter, lower, upper):
+    x, y = distribution.get_plot_data(lower, upper, 100)
+    plt.cla()
+    plt.plot(x, y)
+    plt.title("{0}: {1}".format(dataset, signature))
+    #plt.savefig("/tmp/figures/{0}__{1}__{2}.png".format(dataset, signature, hyperparameter))
+    plt.show(block=True)
+
+
+def make_plot_for_tree(dataset, tree):
+    if type(tree) is list:
+        example_config = tree[0][-1]
+        keys, values = zip(*sorted(example_config.items()))
+        distributions = {key: GaussianMixture() for key in keys if type(example_config[key]) not in (str, None, bool, np.string_, np.bool_, NoneType)}
+        signature = [str(example_config[key]) for key in keys if type(example_config[key]) in (str, None, bool, np.string_, np.bool_, NoneType)]
+        signature = "_".join(signature)
+        print(distributions.keys(), signature)
+        for key, distribution in iteritems(distributions):
+            lower, upper = train(distribution, key, tree)
+            plot_distribution(distribution, signature, dataset, key, lower - 1, upper + 1)
+
+        #train(distribution,
+        #num_groups = len(tree) / 100
+        #for i in xrange(num_groups):
+        #    distribution.combine(tree
+        print("is numerical {0} with {1} configurations".format(values, len(tree)))
+    else:
+        cat_param_name, cat_values = tree
+        for cat_name, cat_value in cat_values.items():
+            make_plot_for_tree(dataset, cat_value)
+
 
 if __name__ == '__main__':
-    dataset_path = "/home/roger/thesis/data_analysis"
+    dataset_path = "/home/roger/thesis/data_analysis/standard/balance-scale"
     dataset_name = "balance-scale"
 
     if len(sys.argv) > 1:
         dataset_path = sys.argv[-2]
         dataset_name = sys.argv[-1]
 
-    make_plot_improvement_over_default(dataset_path, dataset_name)
-
-    #make_plot_improvement_comparison()
+    #make_plot_improvement_over_default(dataset_path, dataset_name)
     generate_comparison_table_entry(dataset_path)
+    #make_plot_learned_distribution_vs_random(dataset_path)
+    #make_plot_learned_components()

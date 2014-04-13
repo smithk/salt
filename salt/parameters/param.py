@@ -46,6 +46,11 @@ class Distribution(object):
             mean = settings.as_float('mean')
             stdev = settings.as_float('stdev')
             distribution = LogNormal(mean, stdev)
+        elif distribution_type.lower() == 'gmm':
+            means = settings.get_list('means')
+            variances = settings.get_list('variances')
+            weights = settings.get_list('weights')
+            distribution = GaussianMixture(means, variances, weights)
         else:
             pass  # TODO Report invalid distribution specification
         return distribution
@@ -248,6 +253,9 @@ class GaussianMixture(Distribution):
 
     def fit(self, data):
         self.gmm.fit(data)
+        self.means = self.gmm.means_
+        self.variances = self.gmm.covars_
+        self.weights = self.gmm.weights_
 
     def combine(self, sample):
         if type(sample) is list:
@@ -283,6 +291,15 @@ class GaussianMixture(Distribution):
         x_points = np.linspace(start, end + 1, num_points)
         y_points = np.exp(self.gmm.score(x_points))
         return x_points, y_points
+
+    def dump(self):
+        dist = OrderedDict()
+        dist['distribution'] = 'gmm'
+        dist['means'] = self.means
+        dist['variances'] = self.variances
+        dist['weights'] = self.weights
+        return dist
+
 
 
 class ParameterSpace(object):
