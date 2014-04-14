@@ -292,16 +292,19 @@ def make_plot_learned_distribution_vs_random(dataset_path):
     plt.show(block=True)
 
 
-def make_plot_learned_components():
-    filenames = glob.glob("/home/roger/thesis/data_analysis/standard/case_study/*DecisionTreeClassifier_all")
+def make_plot_learned_components(learner):
+    #filenames = glob.glob("/home/roger/thesis/data_analysis/standard/case_study/*DecisionTreeClassifier_all")
+    filenames = glob.glob("/tmp/fromoptimus/all_alls/{0}*".format(learner))
+    print(filenames)
     #tree_structure = get_tree('DecisionTreeClassifier')
     evaluation_list = []
-    for filename in filenames:
-        tree_structure = get_tree('DecisionTreeClassifier')
+    for filename in filenames:  # [:3]:
+        tree_structure = get_tree(learner)
         print(filename)
         evaluation_list.extend(load_list([filename]))
         print(evaluation_list[0])
 
+    tree_structure = get_tree(learner)
     tree = list_to_tree(evaluation_list, tree_structure)
     filename = "AllDatasets"
     make_plot_for_tree(filename.split('/')[-1], tree)
@@ -339,8 +342,8 @@ def plot_distribution(distribution, signature, dataset, hyperparameter, lower, u
     plt.cla()
     plt.plot(x, y)
     plt.title("{0}: {1}".format(dataset, signature))
-    #plt.savefig("/tmp/figures/{0}__{1}__{2}.png".format(dataset, signature, hyperparameter))
-    plt.show(block=True)
+    plt.savefig("/tmp/figures/{0}__{1}__{2}.png".format(dataset, signature, hyperparameter))
+    #plt.show(block=True)
 
 
 def make_plot_for_tree(dataset, tree):
@@ -369,12 +372,13 @@ def make_plot_for_tree(dataset, tree):
 if __name__ == '__main__':
     dataset_path = "/home/roger/thesis/data_analysis/standard/balance-scale"
     dataset_name = "balance-scale"
+    learner = 'SVMClassifier'
 
     if len(sys.argv) > 1:
         dataset_path = sys.argv[-2]
         dataset_name = sys.argv[-1]
 
     #make_plot_improvement_over_default(dataset_path, dataset_name)
-    generate_comparison_table_entry(dataset_path)
+    #generate_comparison_table_entry(dataset_path)
     #make_plot_learned_distribution_vs_random(dataset_path)
-    #make_plot_learned_components()
+    make_plot_learned_components(learner)
