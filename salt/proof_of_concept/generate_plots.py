@@ -240,7 +240,8 @@ def get_worst_best_optimal(dataset_path):
     optimized_scores = [np.mean(load_optimized_scores(dataset_path, learner_name))
                         for learner_name in learner_names]
     optimal_score_index = np.argmax(optimized_scores)
-    return min(default_scores[default_scores != 0]), max(default_scores), optimized_scores[optimal_score_index], learner_names[optimal_score_index]
+    return min(default_scores[default_scores != 0]), max(default_scores),\
+        optimized_scores[optimal_score_index], learner_names[optimal_score_index].replace('Classifier', '')
 
 
 def make_plot_improvement_comparison():
@@ -261,7 +262,7 @@ def make_plot_improvement_comparison():
 def generate_comparison_table_entry(dataset_path):
     worst, best, optimal, learner_name = get_worst_best_optimal(dataset_path)
     with open("/tmp/figures/comparison_table.txt", 'a') as output_file:
-        output_file.write("{0} & {1:.4f} & {2:.4f} & ~ & {3:.4f} & {4:.2f}\\% & {5}\\\\\n".format(dataset_name, worst, best, optimal, 100*(optimal / best - 1), learner_name))
+        output_file.write("{0} & {1:.4f} & {2:.4f} & ~ & {3:.4f} & {4:.2f}\\% & {5}\\\\\n".format(dataset_name.replace('_', '\\_'), worst, best, optimal, 100 * (optimal / best - 1), learner_name))
 
 
 def make_plot_learned_distribution_vs_random(dataset_path):
