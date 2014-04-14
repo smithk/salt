@@ -241,10 +241,17 @@ def get_worst_best_optimal(dataset_path):
                         for learner_name in learner_names]
     optimal_score_index = np.argmax(optimized_scores)
 
-    best_default = max(default_scores)
+    best_default_index = np.argmax(default_scores)
+    best_default = default_scores[best_default_index]
+    if best_default > optimized_scores[optimal_score_index]:
+        optimal_score = best_default
+        optimal_learner = learner_names[best_default_index]
+    else:
+        optimal_score = optimized_scores[optimal_score_index]
+        optimal_learner = learner_names[optimal_score_index]
     optimal_score = max(best_default, optimized_scores[optimal_score_index])
     return min(default_scores[default_scores != 0]), max(default_scores),\
-        optimal_score, learner_names[optimal_score_index].replace('Classifier', '')
+        optimal_score, optimal_learner.replace('Classifier', '')
 
 
 def make_plot_improvement_comparison():
