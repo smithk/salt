@@ -91,7 +91,7 @@ def display_optimized_default_chart(dataset_name, default_data, optimized_data, 
                 plot_means(subplot, default_means, vertical_offset=0.325, alpha=0.4, boxheight=0.05)
             plt.tight_layout(rect=(0, 0.07, 1, 1))
             #  Significantly different from the best (95% confidence)
-            plt.savefig("/tmp/figures/optimized_vs_default_{0}.png".format(dataset_name))
+            plt.savefig("/tmp/figures/optimized_vs_default_{0}.pdf".format(dataset_name))
             #plt.show(block=True)
         else:
             for i in range(len(means)):
@@ -342,7 +342,7 @@ def plot_distribution(distribution, signature, dataset, hyperparameter, lower, u
     plt.cla()
     plt.plot(x, y)
     plt.title("{0}: {1}".format(dataset, signature))
-    plt.savefig("/tmp/figures/{0}__{1}__{2}.png".format(dataset, signature, hyperparameter))
+    plt.savefig("/tmp/figures/{0}__{1}__{2}.pdf".format(dataset, signature, hyperparameter))
     #plt.show(block=True)
 
 
@@ -378,7 +378,7 @@ if __name__ == '__main__':
         dataset_path = sys.argv[-2]
         dataset_name = sys.argv[-1]
 
-    #make_plot_improvement_over_default(dataset_path, dataset_name)
+    make_plot_improvement_over_default(dataset_path, dataset_name)
     #generate_comparison_table_entry(dataset_path)
     #make_plot_learned_distribution_vs_random(dataset_path)
-    make_plot_learned_components(learner)
+    #make_plot_learned_components(learner)
