@@ -1,0 +1,36 @@
+# root directory
+
+build 				created by the installation process. mysterious content
+code  				symbolic link to nowhere
+data  				datasets
+dist  				created by the installation process. mysterious content
+__init__.py  		indicates this is a python package
+README.rst  		github README
+salt  				the source code
+salt_ml.egg-info  	created by the installation process. mysterious content
+setup.py 			installation script	
+
+
+# salt directory
+			
+gui         		subpackage containing the gui  
+IO     				subpackage containing file IO
+main.py   			"entry point" - this is what is run when salt is run
+options         	subpackage for writing configuration options to salt.ini
+requirements_1.txt  lists dependencies (used by pip)
+sample   			-- legacy code -- should be removed
+data      			subpackage that handles the datasets
+__init__.py   		indicates this is a python package
+jobs				subpackage containing the job manager
+main.pyc  			compiled main.py - automatically created by python
+parameters        	subpackage hyper-parameter distributions, parameter space, cat vs numeric, etc
+requirements_2.txt	lists dependencies (used by pip)  
+suggest  			subpackage contains the code to call optimizers
+_unittests			-- legacy code -- abandoned
+evaluate  			subpackage containing metrics and statistical tests
+__init__.pyc  		compiled __init__.py
+learn				subpackage containing the learner definitions
+optimize  			subpackage containing the optimizer definitions
+proof_of_concept	-- legacy code -- will be removed later
+utils				subpackage containing miscellaneous code 
+
