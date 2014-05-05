@@ -325,7 +325,7 @@ class DistributedJobManager(Process):
                 if cluster_job.exception is not None:
                     print("Job crashed: {0}".format(cluster_job.exception))
         except Exception as e:
-            print("Something is not right: {0}, {1}".format(e, type(e)))
+            print("[Job Manager] Something is not right: {0}, {1}".format(e, type(e)))
         finally:
             self.lock.release()
         gc.collect()
@@ -367,7 +367,7 @@ class LocalJobManager(Process):
                    Wait for all jobs to finish before closing the JobManager.
         '''
         print("[Job Manager] Started with pid={0}".format(os.getpid()))
-        cluster_args = {'processes': self.local_cores}  # , 'maxtasksperchild': 1000}
+        cluster_args = {'processes': self.local_cores}
         self.cluster = Pool(**cluster_args)
         try:
             message = self.task_queue.get()  # Wait until a message arrives
@@ -462,11 +462,10 @@ class LocalJobManager(Process):
             print("couldn't send jobs")
             # Terminate active jobs for the current configuration, if any
             for active_job in active_configuration_jobs:
-                self.cluster.cancel(active_job) # TODO cancel jobs in multiprocessing
+                self.cluster.cancel(active_job)  # TODO cancel jobs in multiprocessing
             del active_learner_jobs[self._key(configuration)]
             # Remove pending predictions
             del learner_prediction[self._key(configuration)]
-        print("finished submitting")
 
     def _key(self, dictionary):
         return repr(sorted(dictionary.items()))

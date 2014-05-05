@@ -17,7 +17,6 @@ class BaseOptimizer(object):
         self.param_space = param_space
         self.evaluation_results = []
         self.evaluation_parameters = []
-        self.initial_configurations = [{}]  # Try these first
 
     def add_results(self, evaluation_results):
         #insort(self.evaluation_results, evaluation_results)
@@ -97,7 +96,7 @@ class DefaultConfigOptimizer(BaseOptimizer):
 class KDEOptimizer(BaseOptimizer):
     def __init__(self, param_space):
         super(KDEOptimizer, self).__init__(param_space)
-        self.configurations = [{}]
+        self.configurations = []
         numerical_params = param_space.numerical_params
         self.numerical_params_exist = len(numerical_params) > 0
         # TODO Do this correctly
@@ -107,16 +106,15 @@ class KDEOptimizer(BaseOptimizer):
         return not self.numerical_params_exist
 
     def get_next_configuration(self):
-        if len(self.initial_configurations) > 0:
-            next_configuration = self.initial_configurations.pop()
-        else:
+        #if len(self.configurations) >= 10:
+        #    return None
+        next_configuration = self.param_space.sample_configuration()
+        while next_configuration in self.configurations:
+            #if self.configurations_exhausted():
+            #    next_configuration = None
+            #    break
             next_configuration = self.param_space.sample_configuration()
-            while next_configuration in self.configurations:
-                #if self.configurations_exhausted():
-                #    next_configuration = None
-                #    break
-                next_configuration = self.param_space.sample_configuration()
-            self.configurations.append(next_configuration)
+        self.configurations.append(next_configuration)
         return next_configuration
 
 
@@ -276,7 +274,7 @@ class ShrinkingHypercubeOptimizer(BaseOptimizer):
         return next_configuration
 
 
-class ListOptimizer(object):
+class StaticConfigListOptimizer(object):
     '''Evaluates configurations drawn from a list.'''
     def __init__(self, configuration_list):
         self.evaluation_results = []

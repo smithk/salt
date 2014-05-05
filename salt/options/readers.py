@@ -5,7 +5,7 @@ options from different sources.
 
 import argparse
 from ..learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS
-from ..optimize import AVAILABLE_OPTIMIZERS
+from ..optimize import AVAILABLE_OPTIMIZERS, SPECIAL_OPTIMIZERS
 
 
 class BaseReader(object):
@@ -35,11 +35,14 @@ class StringReader(BaseReader):
                             help="Input file (only arff implemented at the moment)")
         parser.add_argument('-r', '--regression',
                             help="Is this a regression task?", action='store_true')
+        parser.add_argument('-m', '--mode', help='Running mode',
+                            choices=['optimization', 'model_selection',
+                                     'full'], default='full')
         parser.add_argument('-l', '--learners', help="List of learners", nargs='+',
                             choices=AVAILABLE_CLASSIFIERS.keys() + AVAILABLE_REGRESSORS.keys(),
                             default=None)
         parser.add_argument('-o', '--optimizer', help='Optimizer',
-                            choices=AVAILABLE_OPTIMIZERS.keys() + ['list'],
+                            choices=AVAILABLE_OPTIMIZERS.keys() + SPECIAL_OPTIMIZERS.keys(),
                             default='randomsearch')
         parser.add_argument('-g', '--gui', help="Use a graphical user interface",
                             action='store_true')

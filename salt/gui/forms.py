@@ -572,7 +572,7 @@ class SaltMain(ttk.Frame):
 
         # === Settings ===
 
-        crossvalidation = settings['Global'].get('crossvalidation', '10')
+        crossvalidation = settings['Global'].get('crossvalidation_optimization', '10')
         local_cores = settings['Global'].as_int('localcores')
         node_path_list = settings['Global'].get('nodes', ['localhost'])
         timeout = settings['Global'].as_int('timeout')

@@ -1,8 +1,9 @@
 """The :mod:`salt.optimize` subpackage implements optimization techniques."""
 
-from .optimize import KDEOptimizer, ShrinkingHypercubeOptimizer, DefaultConfigOptimizer
+from .optimize import KDEOptimizer, ShrinkingHypercubeOptimizer, DefaultConfigOptimizer, StaticConfigListOptimizer
 
-__all__ = ['KDEOptimizer', 'ShrinkingHypercubeOptimizer', 'DefaultConfigOptimizer', 'AVAILABLE_OPTIMIZERS']
+__all__ = ['KDEOptimizer', 'ShrinkingHypercubeOptimizer', 'DefaultConfigOptimizer',
+           'StaticConfigListOptimizer', 'SPECIAL_OPTIMIZERS', 'AVAILABLE_OPTIMIZERS']
 
 AVAILABLE_OPTIMIZERS = {
     'randomsearch': KDEOptimizer,
@@ -10,3 +11,5 @@ AVAILABLE_OPTIMIZERS = {
     'shrinking': ShrinkingHypercubeOptimizer,
     'none': DefaultConfigOptimizer
 }
+
+SPECIAL_OPTIMIZERS = {'list': StaticConfigListOptimizer}

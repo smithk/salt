@@ -4,10 +4,10 @@ from Queue import Empty
 from multiprocessing import Process, Queue, Lock, Manager
 from ..learn.classifiers import BaselineClassifier
 from ..learn.regressors import BaselineRegressor
-from ..optimize import AVAILABLE_OPTIMIZERS
-from ..optimize.optimize import ListOptimizer
+from ..optimize import AVAILABLE_OPTIMIZERS, SPECIAL_OPTIMIZERS
+from ..optimize.optimize import StaticConfigListOptimizer
 from ..jobs import LocalJobManager, DistributedJobManager
-from ..evaluate.metrics import ClassificationMetrics, RegressionMetrics
+from ..evaluate.metrics import ClassificationMetrics, RegressionMetrics, get_baseline_metrics
 from ..evaluate import EvaluationResultSet
 from ..utils.strings import now
 from datetime import datetime, timedelta
@@ -15,7 +15,6 @@ import sys
 import numpy as np
 import os
 import setproctitle
-import cPickle
 
 
 class CommandDispatcher(Process):
@@ -56,8 +55,10 @@ class SuggestionTask(Process):
             self.optimizer = AVAILABLE_OPTIMIZERS['none'](self.parameters)
         elif optimizer in AVAILABLE_OPTIMIZERS:
             self.optimizer = AVAILABLE_OPTIMIZERS[optimizer](self.parameters)
-        elif type(self.parameters) is list:
-            self.optimizer = ListOptimizer(self.parameters)
+        elif optimizer in SPECIAL_OPTIMIZERS:
+            self.optimizer = SPECIAL_OPTIMIZERS[optimizer](self.parameters)
+        #elif type(self.parameters) is list:
+        #    self.optimizer = ListOptimizer(self.parameters)
         else:
             raise ValueError('Invalid optimization method')
         self.task_queue = task_queue
@@ -78,7 +79,7 @@ class SuggestionTask(Process):
     def _is_timeout(self):
         self._c += 1
         #print(datetime.now(), self.finish_at)
-        return datetime.now() > self.finish_at
+        return self.finish_at is not None and datetime.now() > self.finish_at
         #return self._c > 10
 
     timeout = property(_is_timeout)
@@ -145,7 +146,7 @@ class SuggestionTask(Process):
         setproctitle.setproctitle("SALT - {0}".format(self.learner))
         print("Learner {0} running. PID={1}".format(self.learner, os.getpid()))
         # Run learner with default parameters
-        configuration = {}  # self.optimizer.get_next_configuration()
+        configuration = self.optimizer.get_next_configuration()
         tasks_running = 0  # Task == running configuration
         try:
             while configuration is not None:
@@ -176,20 +177,21 @@ class SuggestionTask(Process):
                     #time.sleep(2)
                     configuration = self.optimizer.get_next_configuration()
             self.task_queue.put((self.learner, 'Finished'))
+            if tasks_running > 0 and not self.timeout:
+                print("[Task {0}] No more configurations to test. "
+                      "Waiting for {1} tasks to finish.".format(self.learner, tasks_running))
             while tasks_running > 0 and not self.timeout:
                 tasks_processed = self.process_finished_tasks()
                 tasks_running -= tasks_processed
-                if tasks_processed > 0:
-                    print("{0} tasks running".format(tasks_running))
-            #job_results = self.result_queue.get()
             if self.timeout:
                 job_results = None  # TODO notify that no more jobs will be returned
                 self.notify_results(job_results)
             self.status = 'Finished'
-            message = "{0} [Task {1} finished. Should exit now]".format(now(), self.learner)
-            self.console_print(message)
+            self.console_print("{0} [Task {1} finished. "
+                               "Should exit now]".format(now(), self.learner))
         except KeyboardInterrupt:
             print("Ctrl+C detected. {0} task shutting down...".format(self.learner))
+            self.status = 'Canceled'
 
     def combine_labels(self, fold_labels):
         return np.vstack(fold_labels)
@@ -238,7 +240,7 @@ class SuggestionTask(Process):
             configuration = prediction_set.configuration
             average_runtime = np.mean(prediction_set.runtimes if prediction_set.runtimes else np.inf)
             evaluation_result_set = EvaluationResultSet(self.learner, configuration, metric_set, average_runtime)
-            if evaluation_result_set.configuration != {} or type(self.optimizer) is ListOptimizer:
+            if evaluation_result_set.configuration != {} or type(self.optimizer) is StaticConfigListOptimizer:
                 self.optimizer.add_results(evaluation_result_set)
             if self.manager.console_queue is not None:
                 self.manager.console_queue.put(evaluation_result_set)
@@ -275,32 +277,43 @@ class SuggestionTaskManager():
         self.metrics = metrics
         self.console_queue = console_queue
         self.time = time
-        finish_at = timedelta(minutes=self.time) + datetime.now()
+        finish_at = None if time is None else timedelta(minutes=self.time) + datetime.now()
         self.lock = Lock()
         self.report_exit_caller = report_exit_caller
-        self.baseline_metrics = self.get_baseline_metrics()
-        self.proc_manager = Manager()
+        self.baseline_metrics = get_baseline_metrics(dataset)
+        self.proc_manager = Manager()  # Controls creation of objects shared between processes
         self.statuses = self.proc_manager.dict({learner: False for learner in learners})
         self.ranking = self.proc_manager.dict({learner: None for learner in learners})
         self.finished = self.proc_manager.dict({learner: False for learner in learners})
-        self.task_queue = Queue()
+        self.task_queue = Queue()  # Put tasks in this queue for execution.
         self.queues = {learner: Queue() for learner in learners}
         self.command_queues = {learner: Queue() for learner in learners}
         self.command_queue = command_queue
         self.suggestion_tasks = {learner:
-                                 SuggestionTask(self, learner, parameters[learner],
-                                                self.task_queue, self.queues[learner], self.lock, self.console_queue, finish_at, max_jobs,
-                                                self.command_queues[learner], optimizer=optimizer)
+                                 SuggestionTask(self, learner,
+                                                parameters[learner],
+                                                self.task_queue,
+                                                self.queues[learner],
+                                                self.lock, self.console_queue,
+                                                finish_at, max_jobs,
+                                                self.command_queues[learner],
+                                                optimizer=optimizer)
                                  for learner in learners}
         if distributed:
-            self.job_manager = DistributedJobManager(self.dataset, self.task_queue, self.queues,
-                                                     self.lock, self.finished, self.console_queue,
+            self.job_manager = DistributedJobManager(self.dataset,
+                                                     self.task_queue,
+                                                     self.queues, self.lock,
+                                                     self.finished,
+                                                     self.console_queue,
                                                      local_cores, node_list, ip_addr)
         else:
-            self.job_manager = LocalJobManager(self.dataset, self.task_queue, self.queues,
-                                               self.lock, self.finished, self.console_queue,
+            self.job_manager = LocalJobManager(self.dataset, self.task_queue,
+                                               self.queues, self.lock,
+                                               self.finished,
+                                               self.console_queue,
                                                local_cores)
 
+    ''' Legacy code. Remove.
     def get_baseline_metrics(self, baseline_classifier=BaselineClassifier):
         learner = BaselineRegressor() if self.dataset.is_regression else BaselineClassifier()
         learner.train(self.dataset.data, self.dataset.target)
@@ -310,22 +323,20 @@ class SuggestionTaskManager():
         else:
             baseline_metrics = ClassificationMetrics(self.dataset.target, prediction, self.dataset.target_names, standardize=False)
         return baseline_metrics
+    '''
 
     def all_tasks_finished(self):
-        #return all(self.statuses.values())
-        return all([task.status == 'Finished' for task in self.suggestion_tasks.values()])
+        return all([task.status in ('Finished', 'Canceled') for task in self.suggestion_tasks.values()])
 
     def run_tasks(self, wait=True):
         setproctitle.setproctitle("SALT")
-        #self.job_manager.daemon = True
         self.job_manager.start()
         self.poison_pill_sent = False
         for suggestion_task in self.suggestion_tasks.values():
-            suggestion_task.daemon = True
+            #suggestion_task.daemon = True
             suggestion_task.start()
 
         command_dispatcher = CommandDispatcher(self.command_queue, self.command_queues)
-        #command_dispatcher.daemon = True
         command_dispatcher.start()
         if wait:
             for suggestion_task in self.suggestion_tasks.values():
@@ -333,8 +344,6 @@ class SuggestionTaskManager():
                     suggestion_task.join()
                 print("{0} [Task Manager] [Waiting for task to finish {1}]".format(now(), suggestion_task.learner))
                 suggestion_task.result_queue.close()
-                #self.command_queues[suggestion_task.learner].close()
-                #self.command_queues[suggestion_task.learner].join_thread()
                 suggestion_task.result_queue.join_thread()
                 suggestion_task.join()
                 print("{0} [Task Manager] [Task {1} finished]".format(now(), suggestion_task.learner))
@@ -348,10 +357,6 @@ class SuggestionTaskManager():
             self.task_queue.join_thread()
             self.job_manager.join()
             print("Job manager ended")
-            #a = [(result.learner, result.parameters.values(), result.metrics.score) for result in self.optimizer.evaluation_results]
-            #with open('/tmp/all_results.txt', 'w') as f:
-            #    for i in a:
-            #        f.write("{0}, {1}, {2}\n".format(*i))
             self.report_exit_caller(self.ranking)
 
     def send_rank(self):
@@ -402,9 +407,11 @@ class SuggestionTaskManager():
         suggestion_task_name = task.learner
         self.statuses[suggestion_task_name] = status
         task.optimizer.evaluation_results.reverse()
-        #self.ranking[suggestion_task_name] = task.optimizer.evaluation_results
-        self.ranking[suggestion_task_name] = []
-        self.ranking[suggestion_task_name].extend(task.optimizer.evaluation_results)
+        self.ranking[suggestion_task_name] = task.optimizer.evaluation_results
+        #if self.ranking.get(suggestion_task_name) is None:
+        #    self.ranking[suggestion_task_name] = []
+        #self.ranking[suggestion_task_name].extend(task.optimizer.evaluation_results)
+        #print("adding {0} to the ranking".format(self.ranking[suggestion_task_name]))  # List is empty. Check this!
         if self.all_tasks_finished():
             if self.console_queue:
                 self.console_queue.put("[Task Manager] [ Sending poison pill to job manager ] {0}\n".format(now()))

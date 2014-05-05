@@ -3,6 +3,9 @@ The :mod:`salt.evaluate.metrics` module implements metrics to evaluate the resul
 of a learning task.
 """
 
+from ..learn.classifiers import BaselineClassifier
+from ..learn.regressors import BaselineRegressor
+
 import numpy as np
 from sklearn.metrics import (accuracy_score, fbeta_score, jaccard_similarity_score,
                              precision_score, recall_score, roc_auc_score, matthews_corrcoef,
@@ -351,3 +354,14 @@ class ClassificationMetrics(BaseMetrics):
                                    self.r2_score * self.weights['r2']) / sum(self.weights.values())
 
         return self._score
+
+
+def get_baseline_metrics(dataset):
+    learner = BaselineRegressor() if dataset.is_regression else BaselineClassifier()
+    learner.train(dataset.data, dataset.target)
+    prediction = learner.predict(dataset.data)
+    if dataset.is_regression:
+        baseline_metrics = RegressionMetrics(dataset.target, prediction, standardize=False)
+    else:
+        baseline_metrics = ClassificationMetrics(dataset.target, prediction, dataset.target_names, standardize=False)
+    return baseline_metrics

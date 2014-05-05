@@ -1,4 +1,5 @@
 import numpy as np
+import matplotlib
 from six import iteritems
 import glob
 import sys
@@ -298,7 +299,7 @@ def make_plot_learned_components(learner):
     print(filenames)
     #tree_structure = get_tree('DecisionTreeClassifier')
     evaluation_list = []
-    for filename in filenames:  # [:3]:
+    for filename in filenames:  # [:2]:
         tree_structure = get_tree(learner)
         print(filename)
         evaluation_list.extend(load_list([filename]))
@@ -320,6 +321,7 @@ def train(gmm, key, evaluations):
     selection = np.random.rand(len(scores))
     selection = selection <= scores
     selection = values[selection]
+    print(selection)
 
     '''
     chunk_size = 30
@@ -331,30 +333,70 @@ def train(gmm, key, evaluations):
         gmm.combine(chunk)
         pos += chunk_size
     '''
-    gmm.gmm.n_components = 8
+    gmm.gmm.n_components = 25
     gmm.fit(selection)
     print(vars(gmm.gmm))
     return (lower, upper)
 
 
 def plot_distribution(distribution, signature, dataset, hyperparameter, lower, upper):
-    x, y = distribution.get_plot_data(lower, upper, 100)
-    plt.cla()
-    plt.plot(x, y)
-    plt.title("{0}: {1}".format(dataset, signature))
+    lower = -0.5
+    upper = 1.5
+    x, y = distribution.get_plot_data(lower, upper, 800)
+    fig = plt.figure()
+    #plt.cla()
+    matplotlib.rcParams.update({'font.size': 22})
+    subplot = fig.add_subplot(111)
+    subplot.plot(x, y, lw=2)
+    subplot.fill(x, y, 'b', alpha=0.5)
+    subplot.set_xlim([-0.5, 1.5])
+    subplot.set_ylim([0, 1.6])
+    plt.xlabel("$\gamma$")
+    #subplot.xlabel("$\gamma$")
+    #plt.title("{0}: {1}".format(dataset, signature))
     plt.savefig("/tmp/figures/{0}__{1}__{2}.pdf".format(dataset, signature, hyperparameter))
     #plt.show(block=True)
+
+
+def make_plot_for_testing():
+    distribution = GaussianMixture()
+    distribution.gmm.n_components = 3
+    distributions = [0.3 * np.random.normal(0.2, 0.01, 50),
+                     0.3 * np.random.normal(0.4, 0.01, 50),
+                     0.4 * np.random.normal(0.7, 0.01, 50)]
+    data = np.concatenate(distributions)
+    distribution.fit(data)
+    lower = -0.5
+    upper = 1.5
+    x, y = distribution.get_plot_data(lower, upper, 800)
+    #plt.cla()
+    matplotlib.rcParams.update({'font.size': 22})
+    fig = plt.figure()
+    subplot = fig.add_subplot(111)
+    subplot.plot(x, y, lw=3)
+    subplot.plot(np.arange(len(distributions[0])), distributions[0], lw=3)
+    subplot.fill(x, y, 'b', alpha=0.5)
+    subplot.set_xlim([-0.5, 1.5])
+    subplot.set_ylim([0, 1.4])
+    plt.xlabel("$\gamma$")
+    #plt.title("{0}: {1}".format(dataset, signature))
+    #plt.savefig("/tmp/figures/{0}__{1}__{2}.pdf".format(dataset, signature, hyperparameter))
+    plt.show(block=True)
 
 
 def make_plot_for_tree(dataset, tree):
     if type(tree) is list:
         example_config = tree[0][-1]
+        if example_config.get('kernel') not in ('poly', 'sigmoid'):
+            return
         keys, values = zip(*sorted(example_config.items()))
         distributions = {key: GaussianMixture() for key in keys if type(example_config[key]) not in (str, None, bool, np.string_, np.bool_, NoneType)}
         signature = [str(example_config[key]) for key in keys if type(example_config[key]) in (str, None, bool, np.string_, np.bool_, NoneType)]
         signature = "_".join(signature)
         print(distributions.keys(), signature)
         for key, distribution in iteritems(distributions):
+            if key != 'gamma':
+                continue
             lower, upper = train(distribution, key, tree)
             plot_distribution(distribution, signature, dataset, key, lower - 1, upper + 1)
 
@@ -370,15 +412,29 @@ def make_plot_for_tree(dataset, tree):
 
 
 if __name__ == '__main__':
-    dataset_path = "/home/roger/thesis/data_analysis/standard/balance-scale"
+    dataset_path = "/home/roger/thesis/data_analysis/standard/balance-scale/"
     dataset_name = "balance-scale"
-    learner = 'SVMClassifier'
+    learner = 'DecisionTreeClassifier'
 
     if len(sys.argv) > 1:
         dataset_path = sys.argv[-2]
         dataset_name = sys.argv[-1]
 
-    make_plot_improvement_over_default(dataset_path, dataset_name)
+    #make_plot_improvement_over_default(dataset_path, dataset_name)
     #generate_comparison_table_entry(dataset_path)
     #make_plot_learned_distribution_vs_random(dataset_path)
-    #make_plot_learned_components(learner)
+
+    names = ['PassiveAggressiveClassifier', 'RadiusNeighborsClassifier', 'GaussianNBClassifier',
+             'ExtraTreeEnsembleClassifier', 'SVMClassifier', 'LinearDiscriminantClassifier',
+             'KNNClassifier', 'RandomForestClassifier', 'SGDClassifier',
+             'LogisticRegressionClassifier', 'NearestCentroidClassifier', 'LinearSVMClassifier',
+             'NuSVMClassifier', 'RidgeClassifier',
+             'QuadraticDiscriminantClassifier', 'GradientBoostingClassifier']
+    names = ['SVMClassifier']
+    for learner in names:
+    #    continue
+        try:
+            make_plot_learned_components(learner)
+        except:
+            pass
+    #make_plot_for_testing()
