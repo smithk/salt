@@ -3,7 +3,7 @@
 import sys
 import os
 import itertools
-#import setproctitle
+
 from .IO.readers import ArffReader
 from .utils.debug import log_step, Log
 from .utils.strings import format_dict
@@ -17,18 +17,41 @@ from .suggest.rank import get_local_maxima
 
 rank = None
 
+
 @log_step('Checking the environment')
 def check_environment():
-    '''Check the prerequisites and versions currently installed.
+    '''Check for prerequisites and their respective installed versions.
 
-    :returns: Dictionary with prerequisites and their versions.
+
+    :returns: Dictionary with prerequisites and their versions (or 'None' for
+    packages unable to load).
     '''
-    from numpy import __version__ as numpy_version
-    from scipy import __version__ as scipy_version
-    from matplotlib import __version__ as matplotlib_version
-    from sklearn import __version__ as sklearn_version
-    from six.moves import tkinter
-    tkinter_version = tkinter.TkVersion
+    try:  # Attempt to import numpy
+        from numpy import __version__ as numpy_version
+    except:
+        numpy_version = None
+
+    try:  # Attempt to import scipy
+        from scipy import __version__ as scipy_version
+    except:
+        scipy_version = None
+
+    try:  # Attempt to import matplotlib
+        from matplotlib import __version__ as matplotlib_version
+    except:
+        matplotlib_version = None
+
+    try:  # Attempt to import scikit-learn
+        from sklearn import __version__ as sklearn_version
+    except:
+        sklearn_version = None
+
+    try:  # Attempt to import tkinter
+        from six.moves import tkinter
+        tkinter_version = tkinter.TkVersion
+    except:
+        tkinter_version = None
+
     return {'numpy': numpy_version,
             'scipy': scipy_version,
             'matplotlib': matplotlib_version,
@@ -41,41 +64,45 @@ def run_gui(options):
 
     :param options: user-specified configuration.
     '''
-    gui = SaltMain(options)
+    gui = SaltMain(options)  # Main window
     gui.show()
 
 
 def run_cmdline(cmdline_options):
-    '''Run [SALT] in command-line mode.
+    '''Run SALT in command-line mode.
 
     :param options: user-specified configuration.
     '''
-    running_msg = 'Running [SALT] in command-line mode with options\n{options}'
-    Log.write(running_msg.format(options=format_dict(cmdline_options)))
 
-    # === Commandline options ===
+    # Print loaded command line options.
+    Log.write("Running [SALT] in command-line mode "
+              "with options\n{0}".format(format_dict(cmdline_options)))
+
+    # === Load command line options ===
     dataset_path = cmdline_options['input_file']
     is_regression = cmdline_options['regression']
     optimizer = cmdline_options['optimizer']
     learners = cmdline_options['learners']
 
-    mode = cmdline_options['mode']
+    mode = cmdline_options['mode']  # optimization, model_selection, or full
 
-    misc.setup_console()  # Adjusts matrix display properties on console.
+    misc.setup_console()  # Adjusts matrix display properties on console (numpy).
 
-    # === Settings (from salt.ini) ===
+    # === Load Settings (from salt.ini) ===
     settings = Settings.load_or_create_config()  # Creates salt.ini if needed.
-    holdout = settings['Global'].as_float('holdout')
-    local_cores = settings['Global'].as_int('localcores')
-    use_cluster = settings['Global'].get('usecluster', 'False')
+    holdout = settings['Global'].as_float('holdout')  # Proportion of the dataset to hold out for model selection.
+    local_cores = settings['Global'].as_int('localcores')  # Number of cores to use from the local machine.
+    use_cluster = settings['Global'].get('usecluster', 'False')  # Distribute processes over the network?
     use_cluster = use_cluster.lower() == 'true'
     if not use_cluster and local_cores == 0:
         print("Invalid number of local cores.")
         return
-    distributed_nodes = settings['Global'].get('nodes', ['localhost'])
-    timeout = settings['Global'].as_int('timeout')
-    max_jobs = settings['Global'].as_int('maxprocesses')
+    distributed_nodes = settings['Global'].get('nodes', ['localhost'])  # Nodes for distributed computing.
+    timeout = settings['Global'].as_int('timeout')  # Time alloted for optimization.
+    max_jobs = settings['Global'].as_int('maxprocesses')  # Maximum number of processes to be run at a time.
     ip_addr = settings['Global'].get('ip_addr')
+
+    # === Load enabled learners ===
 
     classifier_settings = settings.get('Classifiers')
     regressor_settings = settings.get('Regressors')
@@ -85,7 +112,6 @@ def run_cmdline(cmdline_options):
 
     distributed_nodes = Settings.read_nodes(distributed_nodes)
 
-    # === Learners ===
     classifier_settings = settings.get('Classifiers')
     regressor_settings = settings.get('Regressors')
 
@@ -135,7 +161,9 @@ def run_optimization_stage(dataset_path, settings, learners, is_regression, hold
 
         train_set.initialize(crossval_repetitions, crossval_folds)
 
-        suggestion_task_manager = SuggestionTaskManager(train_set, learners, parameter_space,
+        suggestion_task_manager = SuggestionTaskManager(train_set,
+                                                        learners,
+                                                        parameter_space,
                                                         metrics=[], time=timeout,
                                                         report_exit_caller=report_results,
                                                         console_queue=None,
@@ -147,8 +175,6 @@ def run_optimization_stage(dataset_path, settings, learners, is_regression, hold
         Log.write_color('\n=== SENDING JOBS FOR OPTIMIZATION ===', 'OKGREEN')
         try:
             suggestion_task_manager.run_tasks()
-            print("rank is")
-            print rank
             #candidates = get_local_maxima()
             #return candidates
         except KeyboardInterrupt:
@@ -221,6 +247,8 @@ def main():
     installed_modules = check_environment()
     Log.write('Installed dependencies:\n{modules}'.format(
         modules=format_dict(installed_modules, separator='\t')))
+    if not all(installed_modules.values()):
+        print("Some dependencies can not be loaded.")
 
     if options['gui']:
         run_gui(options)

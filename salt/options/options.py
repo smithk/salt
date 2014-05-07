@@ -2,7 +2,7 @@
 from configobj import ConfigObj
 import os
 import re
-from ..learn import classifiers
+from ..learn import classifiers, AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS
 from collections import OrderedDict
 
 
@@ -168,3 +168,23 @@ class Settings(object):
         xval_folds = int(xval_values['xval_folds'])
         xval_rep = int(xval_values['xval_rep'] or 1)
         return xval_rep, xval_folds
+
+    @classmethod
+    def get_enabled_learners(self, settings, is_regression):
+        classifier_settings = settings.get('Classifiers')
+        regressor_settings = settings.get('Regressors')
+
+        classifier_settings = settings.get('Classifiers')
+        regressor_settings = settings.get('Regressors')
+
+        if is_regression:
+            learner_list = AVAILABLE_REGRESSORS.keys()
+            default_learners = Settings.get_enabled_sections(regressor_settings)
+        else:
+            learner_list = AVAILABLE_CLASSIFIERS.keys()
+            default_learners = Settings.get_enabled_sections(classifier_settings)
+
+        learners = [learner for learner in learners
+                    if learner in learner_list] if learners else default_learners
+
+        return learners

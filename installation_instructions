@@ -1,0 +1,46 @@
+# install the virtualenv
+pip install virtualenv
+python --version
+mkdir ~/.virtualenvs
+virtualenv ~/.virtualenvs/salt/ --no-site-packages
+chmod +x /home/ksmith/.virtualenvs/salt/bin/activate
+source /home/ksmith/.virtualenvs/salt/bin/activate
+deactivate 
+
+
+# install Blas & Lapack
+sudo apt-get install libatlas-dev
+sudo apt-get install liblapack-dev
+
+# install a fortran compiler if you don't have one
+sudo apt-get install gfortran
+
+# install tk-dev (graphics)
+sudo apt-get install tk-dev
+
+
+# install numpy, scipy, matplotlib, & scikit-learn
+pip install numpy
+pip install scipy
+pip install matplotlib
+pip install scikit-learn
+pip install six
+pip install setproctitle
+pip install configobj
+pip install dispy
+
+
+# clone the salt repository
+
+
+# register salt into the python library
+python setup.py develop
+
+# install dispy (python setup.py install dispy -- download source code)
+
+# run salt 
+salt
+(when salt is first run, it creates a salt.ini file with all configurations and options for running salt)
+
+# run salt with GUI
+salt -g
