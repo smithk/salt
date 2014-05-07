@@ -1,4 +1,5 @@
-'''Entry point for GUI and command line interface.'''
+'''Entry point for GUI and command line interface.
+'''
 
 import sys
 import os
@@ -13,9 +14,6 @@ from .options import Settings
 from .learn import AVAILABLE_CLASSIFIERS, AVAILABLE_REGRESSORS, create_parameter_space
 from .gui.forms import SaltMain
 from .suggest import SuggestionTaskManager
-from .suggest.rank import get_local_maxima
-
-rank = None
 
 
 @log_step('Checking the environment')
@@ -86,20 +84,27 @@ def run_cmdline(cmdline_options):
 
     mode = cmdline_options['mode']  # optimization, model_selection, or full
 
-    misc.setup_console()  # Adjusts matrix display properties on console (numpy).
+    misc.setup_console()
+                       # Adjusts matrix display properties on console (numpy).
 
     # === Load Settings (from salt.ini) ===
     settings = Settings.load_or_create_config()  # Creates salt.ini if needed.
-    holdout = settings['Global'].as_float('holdout')  # Proportion of the dataset to hold out for model selection.
-    local_cores = settings['Global'].as_int('localcores')  # Number of cores to use from the local machine.
-    use_cluster = settings['Global'].get('usecluster', 'False')  # Distribute processes over the network?
+    # Proportion of the dataset to hold out for model selection.
+    holdout = settings['Global'].as_float('holdout')
+    # Number of cores to use from the local machine.
+    local_cores = settings['Global'].as_int('localcores')
+    # Distribute processes over the network?
+    use_cluster = settings['Global'].get('usecluster', 'False')
     use_cluster = use_cluster.lower() == 'true'
     if not use_cluster and local_cores == 0:
         print("Invalid number of local cores.")
         return
-    distributed_nodes = settings['Global'].get('nodes', ['localhost'])  # Nodes for distributed computing.
-    timeout = settings['Global'].as_int('timeout')  # Time alloted for optimization.
-    max_jobs = settings['Global'].as_int('maxprocesses')  # Maximum number of processes to be run at a time.
+    # Nodes for distributed computing.
+    distributed_nodes = settings['Global'].get('nodes', ['localhost'])
+    # Time alloted for optimization.
+    timeout = settings['Global'].as_int('timeout')
+    # Maximum number of processes to be run at a time.
+    max_jobs = settings['Global'].as_int('maxprocesses')
     ip_addr = settings['Global'].get('ip_addr')
 
     # === Load enabled learners ===
@@ -107,8 +112,10 @@ def run_cmdline(cmdline_options):
     classifier_settings = settings.get('Classifiers')
     regressor_settings = settings.get('Regressors')
 
-    crossval_optimization = settings['Global'].get('crossvalidation_optimization', '10')
-    crossval_model_selection = settings['Global'].get('crossvalidation_model_selection', '3x10')
+    crossval_optimization = settings['Global'].get(
+        'crossvalidation_optimization', '10')
+    crossval_model_selection = settings['Global'].get(
+        'crossvalidation_model_selection', '3x10')
 
     distributed_nodes = Settings.read_nodes(distributed_nodes)
 
@@ -130,7 +137,8 @@ def run_cmdline(cmdline_options):
 
     # === Optimization stage ===
     if mode in ('optimization', 'full'):
-        crossval_repetitions, crossval_folds = Settings.get_crossvalidation(crossval_optimization)
+        crossval_repetitions, crossval_folds = Settings.get_crossvalidation(
+            crossval_optimization)
         candidates = run_optimization_stage(dataset_path, settings, learners,
                                             is_regression, holdout, timeout,
                                             local_cores, crossval_repetitions,
@@ -140,31 +148,40 @@ def run_cmdline(cmdline_options):
 
     # === Model selection stage ===
     if mode in ('model_selection', 'full'):
-        crossval_repetitions, crossval_folds = Settings.get_crossvalidation(crossval_model_selection)
-        run_model_selection_stage(dataset_path, candidates, learners, local_cores,
-                                  crossval_repetitions, crossval_folds,
-                                  max_jobs, distributed_nodes,
-                                  ip_addr, use_cluster)
+        crossval_repetitions, crossval_folds = Settings.get_crossvalidation(
+            crossval_model_selection)
+        run_model_selection_stage(
+            dataset_path, candidates, learners, local_cores,
+            crossval_repetitions, crossval_folds,
+            max_jobs, distributed_nodes,
+            ip_addr, use_cluster)
 
 
-def run_optimization_stage(dataset_path, settings, learners, is_regression, holdout,
-                           timeout, local_cores, crossval_repetitions, crossval_folds,
-                           optimizer, max_jobs, distributed_nodes, ip_addr, use_cluster):
-        parameter_space = create_parameter_space(learners, settings,
-                                                 AVAILABLE_REGRESSORS if is_regression
-                                                 else AVAILABLE_CLASSIFIERS)
+def run_optimization_stage(
+    dataset_path, settings, learners, is_regression, holdout,
+    timeout, local_cores, crossval_repetitions, crossval_folds,
+        optimizer, max_jobs, distributed_nodes, ip_addr, use_cluster):
+        available_learners = AVAILABLE_REGRESSORS if is_regression else AVAILABLE_CLASSIFIERS
+        parameter_space = \
+            create_parameter_space(learners,
+                                   settings,
+                                   available_learners
+                                   )
         # TODO Ensure that both train and holdout sets have enough examples for
         # each class.
-        train_set, hold_out_set = ArffReader.load_dataset(dataset_path, is_regression, holdout)
+        train_set, hold_out_set = ArffReader.load_dataset(
+            dataset_path, is_regression, holdout)
         # Store the holdout set
-        misc.store_object(hold_out_set, os.path.basename(dataset_path) + '_holdout')
+        misc.store_object(
+            hold_out_set, os.path.basename(dataset_path) + '_holdout')
 
         train_set.initialize(crossval_repetitions, crossval_folds)
 
         suggestion_task_manager = SuggestionTaskManager(train_set,
                                                         learners,
                                                         parameter_space,
-                                                        metrics=[], time=timeout,
+                                                        metrics=[
+                                                        ], time=timeout,
                                                         report_exit_caller=report_results,
                                                         console_queue=None,
                                                         command_queue=None,
@@ -176,7 +193,7 @@ def run_optimization_stage(dataset_path, settings, learners, is_regression, hold
         try:
             suggestion_task_manager.run_tasks()
             #candidates = get_local_maxima()
-            #return candidates
+            # return candidates
         except KeyboardInterrupt:
             print 'Interrupted'
 
@@ -184,18 +201,21 @@ def run_optimization_stage(dataset_path, settings, learners, is_regression, hold
 def run_model_selection_stage(dataset_path, candidates, learners, local_cores,
                               crossval_repetitions, crossval_folds, max_jobs,
                               distributed_nodes, ip_addr, use_cluster):
-    parameter_space = {learner: read_configurations(learner) for learner in learners}
-    train_set = misc.load_serialized_object(os.path.basename(dataset_path) + '_holdout')
+    parameter_space = {learner: read_configurations(learner)
+                       for learner in learners}
+    train_set = misc.load_serialized_object(
+        os.path.basename(dataset_path) + '_holdout')
 
-    suggestion_task_manager = SuggestionTaskManager(train_set, learners, parameter_space,
-                                                    metrics=[], time=None,
-                                                    report_exit_caller=report_results,
-                                                    console_queue=None,
-                                                    command_queue=None,
-                                                    local_cores=local_cores,
-                                                    node_list=distributed_nodes, optimizer='list',
-                                                    max_jobs=max_jobs,
-                                                    ip_addr=ip_addr, distributed=use_cluster)
+    suggestion_task_manager = SuggestionTaskManager(
+        train_set, learners, parameter_space,
+        metrics=[], time=None,
+        report_exit_caller=report_results,
+        console_queue=None,
+        command_queue=None,
+        local_cores=local_cores,
+        node_list=distributed_nodes, optimizer='list',
+        max_jobs=max_jobs,
+        ip_addr=ip_addr, distributed=use_cluster)
     Log.write_color('\n=== SENDING JOBS FOR MODEL SELECTION ===', 'OKGREEN')
     try:
         suggestion_task_manager.run_tasks()
@@ -205,7 +225,8 @@ def run_model_selection_stage(dataset_path, candidates, learners, local_cores,
 
 def read_configurations(learner):
     try:
-        configurations = misc.load_serialized_object_array('data/{0}_candidates'.format(learner))
+        configurations = misc.load_serialized_object_array(
+            'data/{0}_candidates'.format(learner))
         return configurations
     except:
         return []
@@ -214,8 +235,10 @@ def read_configurations(learner):
 def report_results(ranking, top=15):
     string_template = '    score: {score:.8f} learner: [{learner}({parameters})]'
 
-    all_results = sorted(itertools.chain.from_iterable(ranking.values()), reverse=True)
-    Log.write_color('\n=========================== RESULTS ===========================', 'OKGREEN')
+    all_results = sorted(
+        itertools.chain.from_iterable(ranking.values()), reverse=True)
+    Log.write_color(
+        '\n=========================== RESULTS ===========================', 'OKGREEN')
     print('')
     print('Global ranking: (top {0})'.format(top))
     for result in all_results[:top]:
