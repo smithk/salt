@@ -89,6 +89,7 @@ def fit(
     target: str | int | None = None,
     *,
     task: Task | str | None = None,
+    categorical: Sequence[str] | None = None,
     learners: Sequence[str] | None = None,
     metric: str | None = None,
     n_trials: int | None = None,
@@ -109,10 +110,12 @@ def fit(
 
     :param source: dataset path or DataFrame.
     :param target: target column; defaults to the last one.
+    :param categorical: feature columns to treat as labels rather than
+        quantities, for integer-coded categories a file cannot describe.
     :param holdout: fraction withheld from the search. Set to 0 to search on
         everything and forgo an independent estimate.
     """
-    dataset = load(source, target, task=task)
+    dataset = load(source, target, task=task, categorical=categorical)
     log.info("Loaded %s", dataset.describe())
 
     train, held_out = _split_holdout(dataset, holdout, seed)
@@ -172,5 +175,6 @@ def _split_holdout(
         y=y.reset_index(drop=True),
         task=dataset.task,
         name=dataset.name,
+        forced_categorical=list(dataset.forced_categorical),
     )
     return make(X_train, y_train), make(X_hold, y_hold)

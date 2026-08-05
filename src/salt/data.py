@@ -6,22 +6,29 @@ the benchmark corpus under ``data/`` is entirely ARFF.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import logging
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
 import numpy as np
 import pandas as pd
 
 from .task import Task
 
-__all__ = ["Dataset", "load", "detect_task"]
+__all__ = ["Dataset", "load", "detect_task", "as_categorical", "suspect_categorical"]
+
+log = logging.getLogger("salt")
 
 # A numeric target is treated as class labels rather than a regression target
 # when it takes few enough distinct values, both absolutely and relative to the
 # sample count. Integer-coded classes are common and must not be regressed on.
 _MAX_DISCRETE_LABELS = 20
 _MAX_LABEL_FRACTION = 0.05
+
+# A numeric feature with at most this many distinct integer values is worth
+# querying: it may be a code rather than a measurement.
+_SUSPICIOUS_LEVELS = 12
 
 
 @dataclass
@@ -32,6 +39,8 @@ class Dataset:
     y: pd.Series
     task: Task
     name: str = "dataset"
+    #: Columns the caller forced to be treated as labels.
+    forced_categorical: list[str] = field(default_factory=list)
 
     @property
     def n_samples(self) -> int:
@@ -121,8 +130,50 @@ def _read_table(path: Path) -> pd.DataFrame:
     if suffix in {".tsv", ".tab"}:
         return pd.read_csv(path, sep="\t")
     if suffix in {".parquet", ".pq"}:
-        return pd.read_parquet(path)
+        try:
+            return pd.read_parquet(path)
+        except ImportError as exc:  # pragma: no cover - depends on install
+            raise ImportError(
+                "Reading Parquet needs pyarrow, which should have been installed "
+                "with salt. Install it with: pip install pyarrow"
+            ) from exc
     return pd.read_csv(path)
+
+
+def as_categorical(series: pd.Series) -> pd.Series:
+    """Recast a column so it is treated as labels rather than quantities.
+
+    Values become plain strings and missing entries stay missing, which is the
+    form the encoding pipeline expects.
+    """
+    converted = series.astype(object)
+    present = series.notna()
+    converted[present] = converted[present].map(
+        lambda v: str(int(v)) if isinstance(v, float) and float(v).is_integer() else str(v)
+    )
+    converted[~present] = np.nan
+    return converted
+
+
+def suspect_categorical(X: pd.DataFrame) -> list[str]:
+    """Numeric columns that look like they are really codes, not quantities.
+
+    Integer-coded categories (site 1, site 2, site 3) are indistinguishable
+    from measurements once a CSV has been written, and treating them as
+    numbers lets a model read an ordering into them that is not there. Binary
+    columns are excluded: 0/1 is already the encoding a category would get.
+    """
+    suspects: list[str] = []
+    for column in X.columns:
+        series = X[column]
+        if not is_numeric(series):
+            continue
+        values = series.dropna()
+        if values.empty or not bool(np.allclose(values, np.round(values))):
+            continue
+        if 2 < values.nunique() <= _SUSPICIOUS_LEVELS:
+            suspects.append(str(column))
+    return suspects
 
 
 def load(
@@ -130,7 +181,9 @@ def load(
     target: str | int | None = None,
     *,
     task: Task | str | None = None,
+    categorical: Sequence[str] | None = None,
     name: str | None = None,
+    warn_suspicious: bool = True,
 ) -> Dataset:
     """Load a dataset and split off its target column.
 
@@ -139,7 +192,12 @@ def load(
         column, which is the ARFF convention and the usual CSV one.
     :param task: force ``classification`` or ``regression`` instead of
         inferring it.
+    :param categorical: feature columns to treat as labels regardless of their
+        stored type. Use this for integer-coded categories, which nothing in a
+        CSV distinguishes from measurements.
     :param name: label used in reports; defaults to the file stem.
+    :param warn_suspicious: log a warning about numeric columns that look like
+        codes and were not declared categorical.
     """
     if isinstance(source, pd.DataFrame):
         frame = source.copy()
@@ -175,10 +233,37 @@ def load(
     if not keep.all():
         X, y = X[keep], y[keep]
 
+    if categorical:
+        unknown = [c for c in categorical if c not in X.columns]
+        if unknown:
+            raise KeyError(
+                f"Cannot treat unknown column(s) as categorical: {', '.join(unknown)}. "
+                f"Feature columns are: {list(X.columns)}"
+            )
+        X = X.copy()
+        for column in categorical:
+            X[column] = as_categorical(X[column])
+
+    if warn_suspicious:
+        overlooked = [c for c in suspect_categorical(X) if c not in set(categorical or ())]
+        if overlooked:
+            log.warning(
+                "These columns hold few distinct whole numbers and are being treated as "
+                "quantities: %s. If they are codes rather than measurements, pass "
+                "categorical=%r (CLI: --categorical %s) so they are encoded as labels.",
+                ", ".join(overlooked), overlooked, ",".join(overlooked),
+            )
+
     resolved = Task(task) if task is not None else detect_task(y)
     if resolved is Task.CLASSIFICATION:
         y = y.astype("category")
     else:
         y = pd.to_numeric(y)
 
-    return Dataset(X=X.reset_index(drop=True), y=y.reset_index(drop=True), task=resolved, name=default_name)
+    return Dataset(
+        X=X.reset_index(drop=True),
+        y=y.reset_index(drop=True),
+        task=resolved,
+        name=default_name,
+        forced_categorical=list(categorical or ()),
+    )

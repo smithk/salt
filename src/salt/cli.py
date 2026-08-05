@@ -46,6 +46,12 @@ def _build_parser() -> argparse.ArgumentParser:
     run.add_argument(
         "--task", choices=[t.value for t in Task], help="override task detection"
     )
+    run.add_argument(
+        "--categorical",
+        metavar="COLS",
+        help="comma-separated feature columns to treat as labels rather than "
+             "numbers (for integer-coded categories such as site or region IDs)",
+    )
 
     budget = run.add_argument_group("budget")
     budget.add_argument("--time", type=parse_duration, metavar="DURATION",
@@ -74,6 +80,13 @@ def _build_parser() -> argparse.ArgumentParser:
     listing.add_argument("--task", choices=[t.value for t in Task])
 
     return parser
+
+
+def _split_list(text: str | None) -> list[str] | None:
+    """Turn ``a, b ,c`` into ``['a', 'b', 'c']``."""
+    if not text:
+        return None
+    return [item.strip() for item in text.split(",") if item.strip()]
 
 
 def _list_learners(task: str | None) -> int:
@@ -115,7 +128,8 @@ def _run_fit(args: argparse.Namespace) -> int:
         args.data,
         args.target,
         task=args.task,
-        learners=[s.strip() for s in args.learners.split(",")] if args.learners else None,
+        categorical=_split_list(args.categorical),
+        learners=_split_list(args.learners),
         metric=args.metric,
         n_trials=args.trials,
         timeout=args.time,

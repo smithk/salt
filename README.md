@@ -45,8 +45,8 @@ pip install -e '.[boost]'     # adds LightGBM / XGBoost / CatBoost
 ## Usage
 
 ```
-salt fit DATA [--target COL] [--time 10m | --trials N] [--metric M]
-              [--learners a,b] [--folds K] [--holdout F]
+salt fit DATA [--target COL] [--categorical COLS] [--time 10m | --trials N]
+              [--metric M] [--learners a,b] [--folds K] [--holdout F]
               [--sampler tpe|random|hypercube] [--jobs N] [-o model.joblib]
 
 salt learners [--task classification|regression]
@@ -56,7 +56,24 @@ The target defaults to the last column. Task type is detected from the target
 and can be forced with `--task`. Defaults: `balanced_accuracy` for
 classification, `r2` for regression.
 
-Reads CSV, TSV, ARFF, and Parquet.
+Reads CSV, TSV, ARFF, and Parquet. Parquet is the format to prefer: it keeps
+column types, so categorical columns survive a round trip that CSV flattens.
+
+### Integer-coded categories
+
+A column of site IDs — 1, 2, 3 — is indistinguishable from a measurement once
+written to a file. Treated as a number, it tells the model that site 3 is three
+times site 1, and the result is quietly wrong rather than obviously broken:
+
+```bash
+salt fit sites.parquet --learners ridge              # r2 = -0.003
+salt fit sites.parquet --learners ridge \
+    --categorical site                               # r2 =  0.998
+```
+
+SALT warns when a numeric column holds few distinct whole numbers and names the
+flag that fixes it. Binary 0/1 columns are not flagged — they are already the
+encoding a category would receive.
 
 ## Datasets
 
