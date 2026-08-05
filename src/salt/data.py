@@ -1,0 +1,184 @@
+"""Loading datasets and working out what kind of problem they pose.
+
+Accepts CSV, ARFF, and in-memory pandas objects. ARFF stays supported because
+the benchmark corpus under ``data/`` is entirely ARFF.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+
+from .task import Task
+
+__all__ = ["Dataset", "load", "detect_task"]
+
+# A numeric target is treated as class labels rather than a regression target
+# when it takes few enough distinct values, both absolutely and relative to the
+# sample count. Integer-coded classes are common and must not be regressed on.
+_MAX_DISCRETE_LABELS = 20
+_MAX_LABEL_FRACTION = 0.05
+
+
+@dataclass
+class Dataset:
+    """Features, target, and the task they imply."""
+
+    X: pd.DataFrame
+    y: pd.Series
+    task: Task
+    name: str = "dataset"
+
+    @property
+    def n_samples(self) -> int:
+        return len(self.X)
+
+    @property
+    def n_features(self) -> int:
+        return self.X.shape[1]
+
+    @property
+    def categorical_columns(self) -> list[str]:
+        return [c for c in self.X.columns if not is_numeric(self.X[c])]
+
+    @property
+    def numeric_columns(self) -> list[str]:
+        return [c for c in self.X.columns if is_numeric(self.X[c])]
+
+    @property
+    def class_names(self) -> list[str] | None:
+        if self.task is not Task.CLASSIFICATION:
+            return None
+        return [str(v) for v in sorted(self.y.unique())]
+
+    def describe(self) -> str:
+        bits = [
+            f"{self.name}: {self.n_samples} samples x {self.n_features} features",
+            f"task={self.task}",
+        ]
+        if self.task is Task.CLASSIFICATION:
+            bits.append(f"{self.y.nunique()} classes")
+        n_cat = len(self.categorical_columns)
+        if n_cat:
+            bits.append(f"{n_cat} categorical features")
+        return ", ".join(bits)
+
+
+def is_numeric(series: pd.Series) -> bool:
+    return pd.api.types.is_numeric_dtype(series) and not pd.api.types.is_bool_dtype(series)
+
+
+def detect_task(y: pd.Series) -> Task:
+    """Infer whether ``y`` holds class labels or continuous values.
+
+    Non-numeric targets are always classification. Numeric targets are
+    classification only when they look like a small set of discrete codes.
+    """
+    if not is_numeric(y):
+        return Task.CLASSIFICATION
+
+    values = y.dropna()
+    if values.empty:
+        raise ValueError("Target column is entirely missing.")
+
+    n_unique = values.nunique()
+    if n_unique <= 1:
+        raise ValueError(f"Target column has only {n_unique} distinct value(s); nothing to learn.")
+
+    looks_integral = bool(np.allclose(values, np.round(values)))
+    few_absolute = n_unique <= _MAX_DISCRETE_LABELS
+    few_relative = n_unique <= max(2, _MAX_LABEL_FRACTION * len(values))
+
+    if looks_integral and few_absolute and few_relative:
+        return Task.CLASSIFICATION
+    return Task.REGRESSION
+
+
+def _read_arff(path: Path) -> pd.DataFrame:
+    from scipy.io import arff
+
+    raw, _meta = arff.loadarff(str(path))
+    frame = pd.DataFrame(raw)
+    # scipy returns nominal attributes as bytes, and ARFF's missing marker
+    # survives as a literal '?'. Both need normalising before use.
+    for column in frame.columns:
+        if frame[column].dtype == object:
+            decoded = frame[column].apply(
+                lambda v: v.decode("utf-8", "replace") if isinstance(v, bytes) else v
+            )
+            frame[column] = decoded.replace("?", np.nan)
+    return frame
+
+
+def _read_table(path: Path) -> pd.DataFrame:
+    suffix = path.suffix.lower()
+    if suffix == ".arff":
+        return _read_arff(path)
+    if suffix in {".tsv", ".tab"}:
+        return pd.read_csv(path, sep="\t")
+    if suffix in {".parquet", ".pq"}:
+        return pd.read_parquet(path)
+    return pd.read_csv(path)
+
+
+def load(
+    source: str | Path | pd.DataFrame,
+    target: str | int | None = None,
+    *,
+    task: Task | str | None = None,
+    name: str | None = None,
+) -> Dataset:
+    """Load a dataset and split off its target column.
+
+    :param source: path to a CSV/TSV/ARFF/Parquet file, or a DataFrame.
+    :param target: target column name or position. Defaults to the last
+        column, which is the ARFF convention and the usual CSV one.
+    :param task: force ``classification`` or ``regression`` instead of
+        inferring it.
+    :param name: label used in reports; defaults to the file stem.
+    """
+    if isinstance(source, pd.DataFrame):
+        frame = source.copy()
+        default_name = name or "dataframe"
+    else:
+        path = Path(source).expanduser()
+        if not path.exists():
+            raise FileNotFoundError(f"No such dataset: {path}")
+        frame = _read_table(path)
+        default_name = name or path.stem
+
+    if frame.empty:
+        raise ValueError("Dataset is empty.")
+
+    if target is None:
+        target_name = frame.columns[-1]
+    elif isinstance(target, int):
+        target_name = frame.columns[target]
+    else:
+        if target not in frame.columns:
+            raise KeyError(
+                f"No column named {target!r}. Available columns: {list(frame.columns)}"
+            )
+        target_name = target
+
+    y = frame[target_name]
+    X = frame.drop(columns=[target_name])
+    if X.shape[1] == 0:
+        raise ValueError("Dataset has no feature columns once the target is removed.")
+
+    # Rows with no target teach nothing; missing features are imputed later.
+    keep = y.notna()
+    if not keep.all():
+        X, y = X[keep], y[keep]
+
+    resolved = Task(task) if task is not None else detect_task(y)
+    if resolved is Task.CLASSIFICATION:
+        y = y.astype("category")
+    else:
+        y = pd.to_numeric(y)
+
+    return Dataset(X=X.reset_index(drop=True), y=y.reset_index(drop=True), task=resolved, name=default_name)
