@@ -38,9 +38,34 @@ Requires Python 3.10+.
 ```bash
 pip install -e .              # core
 pip install -e '.[boost]'     # adds LightGBM / XGBoost / CatBoost
+pip install -e '.[tabpfn]'    # adds TabPFN
 ```
 
 `lightgbm` and `xgboost` need an OpenMP runtime (`libgomp1` on Debian/Ubuntu).
+
+### TabPFN
+
+TabPFN is a transformer pre-trained on synthetic tabular data. It is not
+trained on your data at all: the training rows are given to the network as
+context and it predicts in a single forward pass. On small tables it is often
+the strongest thing in the registry.
+
+Two things make it unlike the other learners:
+
+- **It has almost no hyperparameters**, so the search spends few trials on it.
+- **It has hard size limits** from pre-training — 10,000 samples, 500 encoded
+  features, 10 classes. Past those it is excluded before the search starts,
+  with the reason printed, rather than failing every trial.
+
+On CPU it is roughly 25–1000× slower per trial than the classical learners, so
+prefer `--time` over `--trials` when it is enabled; a trial budget divides
+evenly between learners that do not cost the same.
+
+Version 2.x downloads its weights with no account. Version 8.x requires
+registering at [ux.priorlabs.ai](https://ux.priorlabs.ai), accepting the
+licence, and setting `TABPFN_TOKEN`. Both work — the pin defaults to 2.x so
+the tool runs out of the box. Weights are fetched on first use, so the first
+TabPFN run needs network access.
 
 ## Usage
 

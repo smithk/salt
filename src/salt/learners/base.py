@@ -54,6 +54,13 @@ class Learner:
     needs_scaling: bool = False
     #: Whether the estimator accepts ``random_state``.
     seedable: bool = True
+    #: Given a dataset, return why this learner cannot be used, or None if it
+    #: can. Lets a learner with hard limits (TabPFN's pretraining sizes) be
+    #: excluded up front with an explanation instead of failing every trial.
+    applies: Callable[[Any], str | None] | None = None
+
+    def excluded_for(self, dataset: Any) -> str | None:
+        return self.applies(dataset) if self.applies is not None else None
 
     def sample(self, trial: optuna.Trial, *, seed: int | None = None) -> dict[str, Any]:
         params = self.space(Space(trial, f"{self.name}__"))

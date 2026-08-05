@@ -24,7 +24,10 @@ log = logging.getLogger("salt")
 # when it takes few enough distinct values, both absolutely and relative to the
 # sample count. Integer-coded classes are common and must not be regressed on.
 _MAX_DISCRETE_LABELS = 20
-_MAX_LABEL_FRACTION = 0.05
+# Distinct values only look like class labels if enough rows share each one.
+# Twenty distinct integers across twenty-five rows is an identifier, not a
+# target; the same twenty across a thousand rows is a classification problem.
+_MIN_ROWS_PER_LABEL = 3
 
 # A numeric feature with at most this many distinct integer values is worth
 # querying: it may be a code rather than a measurement.
@@ -99,10 +102,10 @@ def detect_task(y: pd.Series) -> Task:
         raise ValueError(f"Target column has only {n_unique} distinct value(s); nothing to learn.")
 
     looks_integral = bool(np.allclose(values, np.round(values)))
-    few_absolute = n_unique <= _MAX_DISCRETE_LABELS
-    few_relative = n_unique <= max(2, _MAX_LABEL_FRACTION * len(values))
+    few_enough = n_unique <= _MAX_DISCRETE_LABELS
+    well_populated = n_unique * _MIN_ROWS_PER_LABEL <= len(values)
 
-    if looks_integral and few_absolute and few_relative:
+    if looks_integral and few_enough and well_populated:
         return Task.CLASSIFICATION
     return Task.REGRESSION
 

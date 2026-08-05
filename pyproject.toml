@@ -36,6 +36,9 @@ dependencies = [
 # Gradient-boosted trees. Separate because they are the heaviest dependencies
 # and each needs a working OpenMP runtime.
 boost = ["lightgbm>=4.0", "xgboost>=2.0", "catboost>=1.2"]
+# TabPFN 2.x downloads its weights freely; 8.x requires a licence token in
+# TABPFN_TOKEN. Both work, so the pin is a floor with a documented ceiling.
+tabpfn = ["tabpfn>=2.2,<3"]
 dev = ["pytest>=7"]
 
 [project.scripts]
@@ -46,3 +49,6 @@ packages = ["src/salt"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "slow: needs model weights or a long fit; deselect with -m 'not slow'",
+]

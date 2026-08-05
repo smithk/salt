@@ -27,6 +27,17 @@ def test_many_distinct_integers_are_regression():
     assert detect_task(pd.Series(range(500))) is Task.REGRESSION
 
 
+def test_sparse_integer_labels_are_not_classification():
+    # Twenty distinct integers across twenty-five rows is an identifier:
+    # roughly one row per value, nothing to learn a class boundary from.
+    assert detect_task(pd.Series(list(range(20)) + [0, 1, 2, 3, 4])) is Task.REGRESSION
+
+
+def test_many_classes_are_still_classification_when_well_populated():
+    # The same twenty distinct values across a thousand rows are labels.
+    assert detect_task(pd.Series(list(range(20)) * 50)) is Task.CLASSIFICATION
+
+
 def test_constant_target_is_rejected():
     with pytest.raises(ValueError, match="distinct value"):
         detect_task(pd.Series([1, 1, 1]))

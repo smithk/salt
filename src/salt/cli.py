@@ -150,6 +150,10 @@ def _run_fit(args: argparse.Namespace) -> int:
         print()
         print(f"Top {args.top} configurations:")
         print(result.search.leaderboard(args.top).to_string(index=False))
+    for name, reason in result.search.excluded.items():
+        print(f"\nnot used  {name}: {reason}", file=sys.stderr)
+    for name, reason in result.search.never_worked.items():
+        print(f"\nfailed    {name}: never succeeded. {reason}", file=sys.stderr)
     if result.search.n_failed:
         print(f"\n{result.search.n_failed} trial(s) failed and were skipped.", file=sys.stderr)
 

@@ -15,7 +15,7 @@ from sklearn.model_selection import KFold, StratifiedKFold, cross_val_score
 from sklearn.pipeline import Pipeline
 
 from .data import Dataset
-from .learners import Learner, resolve
+from .learners import Learner, applicable, resolve
 from .metrics import resolve_metric
 from .preprocess import make_preprocessor
 from .runner import LocalRunner, Runner
@@ -44,6 +44,10 @@ class SearchResult:
     records: list[TrialRecord]
     study: optuna.Study = field(repr=False)
     n_failed: int = 0
+    #: Learners ruled out before the search, mapped to why.
+    excluded: dict[str, str] = field(default_factory=dict)
+    #: Learners that were tried but never once succeeded, mapped to the first error.
+    never_worked: dict[str, str] = field(default_factory=dict)
 
     @property
     def best(self) -> TrialRecord:
@@ -143,7 +147,15 @@ def search(
     if n_trials is None and timeout is None:
         n_trials = 100
 
-    candidates = resolve(dataset.task, list(learners) if learners else None)
+    requested = list(learners) if learners else None
+    candidates, excluded = applicable(
+        resolve(dataset.task, requested), dataset, requested=requested is not None
+    )
+    if not candidates:
+        raise ValueError(
+            "No learner can be used on this dataset. "
+            + "; ".join(f"{name}: {reason}" for name, reason in excluded.items())
+        )
     by_name = {learner.name: learner for learner in candidates}
     names = list(by_name)
     metric_name = resolve_metric(dataset.task, metric)
@@ -157,6 +169,7 @@ def search(
     )
 
     failures: list[str] = []
+    failures_by_learner: dict[str, str] = {}
 
     def objective(trial: optuna.Trial) -> float:
         name = trial.suggest_categorical("learner", names)
@@ -181,6 +194,7 @@ def search(
                 )
         except Exception as exc:  # a bad configuration must not end the search
             failures.append(f"{name}: {type(exc).__name__}: {exc}")
+            failures_by_learner.setdefault(name, f"{type(exc).__name__}: {exc}")
             log.debug("Trial %d (%s) failed: %s", trial.number, name, exc)
             raise optuna.TrialPruned() from exc
 
@@ -207,6 +221,14 @@ def search(
     if failures:
         log.debug("%d trial(s) failed. First: %s", len(failures), failures[0])
 
+    # A learner that failed every single trial is a systematic problem — a
+    # missing model download, an incompatible dependency — not an unlucky
+    # configuration. Say so rather than leaving it as a silent absence.
+    succeeded = {record.learner for record in records}
+    never_worked = {n: r for n, r in failures_by_learner.items() if n not in succeeded}
+    for name, reason in never_worked.items():
+        log.warning("%s failed on every attempt and produced no result. %s", name, reason)
+
     return SearchResult(
         dataset=dataset.name,
         task=dataset.task,
@@ -214,6 +236,8 @@ def search(
         records=records,
         study=study,
         n_failed=len(failures),
+        excluded=excluded,
+        never_worked=never_worked,
     )
 
 
