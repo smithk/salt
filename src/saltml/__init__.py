@@ -80,6 +80,13 @@ class FitResult:
         ]
         if self.holdout_score is not None:
             lines.append(f"holdout: {self.holdout_score:.4f}  (untouched during search)")
+        budget = self.search.budget_seconds
+        if budget is not None:
+            over = "" if self.search.elapsed_seconds <= budget * 1.1 else "  (over: a trial in flight cannot be cut short)"
+            lines.append(
+                f"spent:  {self.search.elapsed_seconds:.0f}s of a {budget:.0f}s budget"
+                f" across {len(self.search.records)} trials{over}"
+            )
         lines.append(f"params: {self.params}")
         return "\n".join(lines)
 

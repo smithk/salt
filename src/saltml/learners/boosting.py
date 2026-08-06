@@ -99,18 +99,17 @@ def _lightgbm_regressor(**params: Any) -> Any:
     return LGBMRegressor(**params)
 
 
-class _XGBClassifierWithLabels:
-    """XGBClassifier that accepts arbitrary class labels.
+class _Adapter:
+    """Base for the two estimators that need adapting to scikit-learn.
 
-    XGBoost 3 requires the target to be exactly ``[0..n_classes-1]`` and
-    rejects string labels outright, while every other classifier here takes
-    them as they come. Encoding is done inside fit/predict so the rest of the
-    system does not have to know, and so the labels reported back to the user
-    are the ones they supplied.
-
-    Implements get_params/set_params because scikit-learn clones estimators
-    for every cross-validation fold.
+    scikit-learn clones an estimator for every cross-validation fold, and
+    ``clone`` insists that ``type(est)(**est.get_params())`` return the very
+    same parameter objects — an identity check, not equality. Keeping the
+    parameters in one dict and handing back a shallow copy satisfies that,
+    which the wrapped libraries' own ``get_params`` do not always do.
     """
+
+    _estimator_kind = "classifier"
 
     def __init__(self, **params: Any) -> None:
         self._params = params
@@ -118,9 +117,37 @@ class _XGBClassifierWithLabels:
     def get_params(self, deep: bool = True) -> dict[str, Any]:
         return dict(self._params)
 
-    def set_params(self, **params: Any) -> "_XGBClassifierWithLabels":
+    def set_params(self, **params: Any) -> "_Adapter":
         self._params.update(params)
         return self
+
+    def __sklearn_tags__(self):  # scikit-learn >= 1.6 estimator introspection
+        from sklearn.utils import Tags, TargetTags
+
+        return Tags(
+            estimator_type=self._estimator_kind,
+            target_tags=TargetTags(required=True),
+            classifier_tags=None,
+            regressor_tags=None,
+            transformer_tags=None,
+        )
+
+    def __sklearn_is_fitted__(self) -> bool:
+        # scikit-learn otherwise infers fittedness from trailing-underscore
+        # attributes, which a wrapper holding its model privately has none of;
+        # without this a fitted regressor is reported as unfitted.
+        return hasattr(self, "_model")
+
+
+class _XGBClassifierWithLabels(_Adapter):
+    """XGBClassifier that accepts arbitrary class labels.
+
+    XGBoost 3 requires the target to be exactly ``[0..n_classes-1]`` and
+    rejects string labels outright, while every other classifier here takes
+    them as they come. Encoding happens inside fit/predict so the rest of the
+    system does not have to know, and so the labels reported back to the user
+    are the ones they supplied.
+    """
 
     def fit(self, X: Any, y: Any) -> "_XGBClassifierWithLabels":
         from sklearn.preprocessing import LabelEncoder
@@ -138,20 +165,47 @@ class _XGBClassifierWithLabels:
     def predict_proba(self, X: Any) -> Any:
         return self._model.predict_proba(X)
 
-    def __sklearn_tags__(self):  # scikit-learn >= 1.6 estimator introspection
-        from sklearn.utils import Tags, TargetTags
-
-        return Tags(
-            estimator_type="classifier",
-            target_tags=TargetTags(required=True),
-            classifier_tags=None,
-            regressor_tags=None,
-            transformer_tags=None,
-        )
-
 
 def _xgboost_classifier(**params: Any) -> Any:
     return _XGBClassifierWithLabels(**params)
+
+
+class _CatBoost(_Adapter):
+    """CatBoost with ``cat_features`` supplied at fit time.
+
+    CatBoost's own ``get_params`` returns a fresh list for ``cat_features``
+    each call, so scikit-learn's identity-based clone check rejects it and
+    the learner fails on every fold while working fine in a direct ``fit``.
+    Holding the value here and passing it to ``fit`` sidesteps the round trip
+    entirely.
+    """
+
+    def fit(self, X: Any, y: Any) -> "_CatBoost":
+        from catboost import CatBoostClassifier, CatBoostRegressor
+
+        params = dict(self._params)
+        categorical = params.pop("cat_features", None)
+        model_type = (
+            CatBoostClassifier if self._estimator_kind == "classifier" else CatBoostRegressor
+        )
+        self._model = model_type(**params)
+        self._model.fit(X, y, cat_features=categorical or None)
+        if self._estimator_kind == "classifier":
+            self.classes_ = self._model.classes_
+        return self
+
+    def predict(self, X: Any) -> Any:
+        prediction = self._model.predict(X)
+        # CatBoost returns a column vector for classification; sklearn's
+        # scorers expect one dimension.
+        return prediction.ravel() if hasattr(prediction, "ravel") else prediction
+
+    def predict_proba(self, X: Any) -> Any:
+        return self._model.predict_proba(X)
+
+
+class _CatBoostRegressorAdapter(_CatBoost):
+    _estimator_kind = "regressor"
 
 
 def _xgboost_regressor(**params: Any) -> Any:
@@ -161,15 +215,11 @@ def _xgboost_regressor(**params: Any) -> Any:
 
 
 def _catboost_classifier(**params: Any) -> Any:
-    from catboost import CatBoostClassifier
-
-    return CatBoostClassifier(**params)
+    return _CatBoost(**params)
 
 
 def _catboost_regressor(**params: Any) -> Any:
-    from catboost import CatBoostRegressor
-
-    return CatBoostRegressor(**params)
+    return _CatBoostRegressorAdapter(**params)
 
 
 def _build() -> list[Learner]:

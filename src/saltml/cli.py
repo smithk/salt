@@ -269,6 +269,18 @@ def _run_fit(args: argparse.Namespace) -> int:
 
     print()
     print(result.summary())
+    recommended = result.search.recommended()
+    if recommended.learner != result.learner:
+        ratio = result.search.best.predict_ms_per_1k / max(recommended.predict_ms_per_1k, 1e-9)
+        print(
+            f"\nCheaper alternative within 1%: {recommended.learner} "
+            f"({recommended.score:.4f}, {ratio:.0f}x faster to predict)"
+        )
+
+    print()
+    print("Accuracy vs prediction cost (nothing here is beaten on both):")
+    print(result.search.tradeoff().to_string(index=False))
+
     print()
     print("Best per learner:")
     print(result.search.best_per_learner().to_string(index=False))
