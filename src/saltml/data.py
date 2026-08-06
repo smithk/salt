@@ -16,7 +16,14 @@ import pandas as pd
 
 from .task import Task
 
-__all__ = ["Dataset", "load", "detect_task", "as_categorical", "suspect_categorical"]
+__all__ = [
+    "Dataset",
+    "DatasetError",
+    "load",
+    "detect_task",
+    "as_categorical",
+    "suspect_categorical",
+]
 
 log = logging.getLogger("saltml")
 
@@ -90,9 +97,10 @@ def detect_task(y: pd.Series) -> Task:
     Non-numeric targets are always classification. Numeric targets are
     classification only when they look like a small set of discrete codes.
     """
-    if not is_numeric(y):
-        return Task.CLASSIFICATION
-
+    # These checks come before the dtype branch: a target of all-None or a
+    # single repeated label is just as unusable when it is text as when it is
+    # numeric, and returning CLASSIFICATION for it only defers the failure to
+    # somewhere less legible.
     values = y.dropna()
     if values.empty:
         raise ValueError("Target column is entirely missing.")
@@ -101,6 +109,9 @@ def detect_task(y: pd.Series) -> Task:
     if n_unique <= 1:
         raise ValueError(f"Target column has only {n_unique} distinct value(s); nothing to learn.")
 
+    if not is_numeric(y):
+        return Task.CLASSIFICATION
+
     looks_integral = bool(np.allclose(values, np.round(values)))
     few_enough = n_unique <= _MAX_DISCRETE_LABELS
     well_populated = n_unique * _MIN_ROWS_PER_LABEL <= len(values)
@@ -108,6 +119,20 @@ def detect_task(y: pd.Series) -> Task:
     if looks_integral and few_enough and well_populated:
         return Task.CLASSIFICATION
     return Task.REGRESSION
+
+
+class DatasetError(ValueError):
+    """A dataset file could not be read or made sense of.
+
+    Subclasses ValueError so callers that already handle bad input — the CLI
+    among them — keep working without knowing about this type.
+    """
+
+
+def _unreadable(path: Path, detail: str) -> DatasetError:
+    return DatasetError(
+        f"Could not read {path} as a {path.suffix.lstrip('.') or 'data'} file: {detail}"
+    )
 
 
 def _read_arff(path: Path) -> pd.DataFrame:
@@ -126,21 +151,56 @@ def _read_arff(path: Path) -> pd.DataFrame:
     return frame
 
 
+#: Extensions we know how to read, and how.
+READABLE_SUFFIXES = (".csv", ".tsv", ".tab", ".arff", ".parquet", ".pq")
+
+
 def _read_table(path: Path) -> pd.DataFrame:
+    """Read a file into a DataFrame, or fail with a message naming the file.
+
+    Every underlying reader has its own idea of how to complain — scipy's ARFF
+    parser raises a bare ``StopIteration`` with no message on an empty file,
+    which tells a user nothing at all. They are normalised here so the CLI can
+    print one clear line instead of a traceback.
+    """
+    if path.stat().st_size == 0:
+        raise _unreadable(path, "the file is empty")
+
     suffix = path.suffix.lower()
-    if suffix == ".arff":
-        return _read_arff(path)
-    if suffix in {".tsv", ".tab"}:
-        return pd.read_csv(path, sep="\t")
-    if suffix in {".parquet", ".pq"}:
-        try:
-            return pd.read_parquet(path)
-        except ImportError as exc:  # pragma: no cover - depends on install
-            raise ImportError(
-                "Reading Parquet needs pyarrow, which should have been installed "
-                "with salt. Install it with: pip install pyarrow"
-            ) from exc
-    return pd.read_csv(path)
+    try:
+        if suffix == ".arff":
+            return _read_arff(path)
+        if suffix in {".tsv", ".tab"}:
+            return pd.read_csv(path, sep="\t")
+        if suffix in {".parquet", ".pq"}:
+            try:
+                return pd.read_parquet(path)
+            except ImportError as exc:  # pragma: no cover - depends on install
+                raise ImportError(
+                    "Reading Parquet needs pyarrow, which should have been installed "
+                    "with saltml. Install it with: pip install pyarrow"
+                ) from exc
+        if suffix not in READABLE_SUFFIXES:
+            log.warning(
+                "Unrecognised extension %r; reading %s as CSV. Known formats: %s.",
+                suffix or "(none)", path.name, ", ".join(READABLE_SUFFIXES),
+            )
+        return pd.read_csv(path)
+    except (DatasetError, FileNotFoundError, PermissionError, ImportError):
+        raise
+    except UnicodeDecodeError as exc:
+        raise _unreadable(path, "it is not text (binary content)") from exc
+    except StopIteration as exc:
+        # scipy's ARFF reader runs off the end of a file with no @data section
+        # and raises StopIteration carrying no message at all.
+        raise _unreadable(path, "it ended unexpectedly; the header may be missing "
+                                "or incomplete") from exc
+    except pd.errors.EmptyDataError as exc:
+        raise _unreadable(path, "it contains no columns") from exc
+    except Exception as exc:
+        # Covers scipy's ParseArffError (an OSError, not a ValueError),
+        # pandas' ParserError, and anything else a reader invents.
+        raise _unreadable(path, str(exc) or type(exc).__name__) from exc
 
 
 def as_categorical(series: pd.Series) -> pd.Series:
@@ -213,7 +273,7 @@ def load(
         default_name = name or path.stem
 
     if frame.empty:
-        raise ValueError("Dataset is empty.")
+        raise DatasetError(f"{default_name} has no rows.")
 
     if target is None:
         target_name = frame.columns[-1]
@@ -235,6 +295,19 @@ def load(
     keep = y.notna()
     if not keep.all():
         X, y = X[keep], y[keep]
+
+    # Validated here rather than only in detect_task, so that forcing the task
+    # with task= does not skip the check.
+    if len(y) == 0:
+        raise DatasetError(
+            f"Every row of {default_name} is missing column {target_name!r}; "
+            "nothing is left to learn from."
+        )
+    if y.nunique() <= 1:
+        raise DatasetError(
+            f"Column {target_name!r} has only {y.nunique()} distinct value(s) in "
+            f"{default_name}; a model needs something to tell apart."
+        )
 
     if categorical:
         unknown = [c for c in categorical if c not in X.columns]

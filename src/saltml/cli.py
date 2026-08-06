@@ -300,7 +300,10 @@ def main(argv: list[str] | None = None) -> int:
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)
         return 130
-    except (ValueError, KeyError, FileNotFoundError) as exc:
+    except (ValueError, KeyError, OSError) as exc:
+        # OSError covers a missing file, an unreadable one, and the OSError
+        # subclasses that data readers raise; none should reach a user as a
+        # traceback.
         print(f"error: {exc}", file=sys.stderr)
         return 2
 

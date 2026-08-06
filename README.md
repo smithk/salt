@@ -102,8 +102,12 @@ encoding a category would receive.
 ## Datasets
 
 `data/` holds a small offline corpus the test suite depends on — 47
-classification and 2 regression ARFF files, one canonical copy of each, plus
-fixtures in `data/test/`.
+classification and 2 regression ARFF files, one canonical copy of each.
+
+Malformed-input fixtures are not stored here. `tests/test_malformed.py`
+generates them: a file whose only purpose is to be broken is cheaper to write
+in three lines than to carry in git forever, and generating it documents
+exactly what is wrong with it.
 
 For measuring how good SALT actually is, use the benchmark suites. They are
 fetched from [OpenML](https://www.openml.org) on demand into a cache outside
