@@ -1,4 +1,4 @@
-# SALT — Suggest-A-Learner Toolbox
+# SALT — Suggest A Learner for Tabular data
 
 Point it at a dataset. It searches over algorithms and their hyperparameters,
 and hands back a fitted model plus a ranked table of what worked.
