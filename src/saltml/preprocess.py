@@ -27,29 +27,38 @@ def _one_hot() -> OneHotEncoder:
         return OneHotEncoder(handle_unknown="ignore", sparse=False)
 
 
-def make_preprocessor(dataset: Dataset, *, scale: bool) -> ColumnTransformer:
+def make_preprocessor(
+    dataset: Dataset, *, scale: bool, encode_categorical: bool = True
+) -> ColumnTransformer:
     """Build the impute/encode/scale step for one candidate pipeline.
 
     :param scale: standardise numeric features. Distance- and margin-based
         learners need it; tree ensembles are invariant to it and pay only the
         cost, so each learner declares its own requirement.
+    :param encode_categorical: one-hot encode categorical columns. Set False
+        for a learner that encodes them itself; the columns are still imputed
+        and are passed through as strings.
     """
     numeric_steps: list[tuple[str, object]] = [("impute", SimpleImputer(strategy="median"))]
     if scale:
         numeric_steps.append(("scale", StandardScaler()))
 
-    categorical = Pipeline(
-        [
-            ("impute", SimpleImputer(strategy="most_frequent")),
-            ("encode", _one_hot()),
-        ]
-    )
+    categorical_steps: list[tuple[str, object]] = [
+        ("impute", SimpleImputer(strategy="most_frequent")),
+    ]
+    if encode_categorical:
+        categorical_steps.append(("encode", _one_hot()))
 
-    return ColumnTransformer(
+    transformer = ColumnTransformer(
         [
             ("numeric", Pipeline(numeric_steps), dataset.numeric_columns),
-            ("categorical", categorical, dataset.categorical_columns),
+            ("categorical", Pipeline(categorical_steps), dataset.categorical_columns),
         ],
         remainder="drop",
         verbose_feature_names_out=False,
     )
+    if not encode_categorical:
+        # A learner doing its own encoding needs column names to say which
+        # columns are categorical, so keep the output a DataFrame.
+        transformer.set_output(transform="pandas")
+    return transformer

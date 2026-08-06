@@ -102,9 +102,20 @@ def _short_params(params: dict[str, Any], limit: int = 60) -> str:
 
 def build_pipeline(dataset: Dataset, learner: Learner, params: dict[str, Any]) -> Pipeline:
     """Assemble the full candidate: preprocessing plus estimator."""
+    encode = not learner.handles_categorical
+    params = dict(params)
+    if not encode:
+        # The learner encodes categoricals itself and must be told which
+        # columns they are. Names survive the transformer, so pass names.
+        params["cat_features"] = list(dataset.categorical_columns)
     return Pipeline(
         [
-            ("prepare", make_preprocessor(dataset, scale=learner.needs_scaling)),
+            (
+                "prepare",
+                make_preprocessor(
+                    dataset, scale=learner.needs_scaling, encode_categorical=encode
+                ),
+            ),
             ("model", learner.build(params)),
         ]
     )

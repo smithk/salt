@@ -54,6 +54,10 @@ class Learner:
     needs_scaling: bool = False
     #: Whether the estimator accepts ``random_state``.
     seedable: bool = True
+    #: Encode categorical columns itself, given the raw columns. Only worth it
+    #: for a learner whose own handling beats one-hot encoding — CatBoost's
+    #: ordered target statistics do, especially at high cardinality.
+    handles_categorical: bool = False
     #: Given a dataset, return why this learner cannot be used, or None if it
     #: can. Lets a learner with hard limits (TabPFN's pretraining sizes) be
     #: excluded up front with an explanation instead of failing every trial.

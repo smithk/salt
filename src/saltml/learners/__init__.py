@@ -8,6 +8,7 @@ from ..task import Task
 from .base import Learner, Space
 from .classification import CLASSIFIERS
 from .regression import REGRESSORS
+from .boosting import BOOSTING_LEARNERS
 from .tabpfn import TABPFN_LEARNERS, tabpfn_available
 
 __all__ = ["Learner", "Space", "REGISTRY", "for_task", "resolve", "applicable"]
@@ -21,6 +22,9 @@ REGISTRY: dict[Task, dict[str, Learner]] = {
 
 # Optional learners join the registry only when their dependency is present,
 # so a missing extra shows up as one absent name rather than an import error.
+for _learner in BOOSTING_LEARNERS:
+    REGISTRY[_learner.task][_learner.name] = _learner
+
 if tabpfn_available():
     for _learner in TABPFN_LEARNERS:
         REGISTRY[_learner.task][_learner.name] = _learner
