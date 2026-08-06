@@ -5,7 +5,7 @@ import pytest
 from saltml.data import Dataset, detect_task, load
 from saltml.task import Task
 
-ARFF = "data/standard_ml_sets/classification/datasets/standard/iris.arff"
+ARFF = "data/classification/iris.arff"
 
 
 def test_detects_string_target_as_classification():

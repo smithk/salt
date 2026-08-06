@@ -4,7 +4,7 @@ import pytest
 
 from saltml.cli import main, parse_duration
 
-IRIS = "data/standard_ml_sets/classification/datasets/standard/iris.arff"
+IRIS = "data/classification/iris.arff"
 
 
 @pytest.mark.parametrize(

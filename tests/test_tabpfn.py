@@ -113,7 +113,7 @@ def test_search_errors_when_nothing_is_applicable():
 @pytest.mark.slow
 def test_tabpfn_fits_and_scores_on_iris():
     result = saltml.search(
-        load("data/standard_ml_sets/classification/datasets/standard/iris.arff"),
+        load("data/classification/iris.arff"),
         learners=["tabpfn"], n_trials=2, folds=3, seed=0,
     )
     assert result.n_failed == 0

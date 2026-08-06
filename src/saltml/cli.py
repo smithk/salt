@@ -79,6 +79,32 @@ def _build_parser() -> argparse.ArgumentParser:
     listing = subcommands.add_parser("learners", help="list available algorithms")
     listing.add_argument("--task", choices=[t.value for t in Task])
 
+    bench = subcommands.add_parser(
+        "bench", help="fetch and run public benchmark suites"
+    )
+    bench_actions = bench.add_subparsers(dest="bench_command", required=True)
+
+    bench_actions.add_parser("list", help="show available suites and the cache location")
+
+    grab = bench_actions.add_parser("fetch", help="download a suite into the cache")
+    grab.add_argument("suite", help="suite name, or 'all'")
+    grab.add_argument("--refresh", action="store_true", help="re-download even if cached")
+
+    trial = bench_actions.add_parser("run", help="score SALT across a whole suite")
+    trial.add_argument("suite")
+    trial.add_argument("--task", choices=[t.value for t in Task],
+                       help="restrict to one task type")
+    trial.add_argument("--time", type=parse_duration, metavar="DURATION",
+                       help="budget per dataset, e.g. 2m")
+    trial.add_argument("--trials", type=int, help="trials per dataset")
+    trial.add_argument("--learners", help="comma-separated subset to consider")
+    trial.add_argument("--sampler", default="tpe",
+                       choices=["tpe", "random", "hypercube"])
+    trial.add_argument("--folds", type=int, default=5)
+    trial.add_argument("--jobs", type=int, default=-1)
+    trial.add_argument("--seed", type=int, default=0)
+    trial.add_argument("-o", "--out", help="write per-dataset results as CSV")
+
     return parser
 
 
@@ -98,6 +124,106 @@ def _list_learners(task: str | None) -> int:
             print(f"  {name}{marker}")
     print("\n  * features are standardised for this learner")
     return 0
+
+
+def _bench_list() -> int:
+    from .benchmarks import SUITES, cache_dir
+
+    for suite in SUITES.values():
+        tasks = ", ".join(sorted(str(t) for t in suite.tasks))
+        print(f"\n{suite.name}  ({len(suite.entries)} datasets: {tasks})")
+        print(f"  {suite.description}")
+        print(f"  {suite.reference}")
+        print("  " + ", ".join(e.name for e in suite.entries))
+    print(f"\ncache: {cache_dir()}")
+    print("override with SALTML_CACHE. Nothing fetched is stored in the repository.")
+    return 0
+
+
+def _bench_fetch(args: argparse.Namespace) -> int:
+    from .benchmarks import SUITES, fetch, resolve_suite
+
+    suites = list(SUITES.values()) if args.suite == "all" else [resolve_suite(args.suite)]
+    total = failed = 0
+    for suite in suites:
+        for entry in suite.entries:
+            total += 1
+            try:
+                path = fetch(entry, refresh=args.refresh)
+                size = path.stat().st_size / 1024
+                print(f"  {entry.name:<36} {size:>8.0f} KB")
+            except Exception as exc:
+                failed += 1
+                print(f"  {entry.name:<36} FAILED: {type(exc).__name__}: {exc}",
+                      file=sys.stderr)
+    print(f"\n{total - failed}/{total} datasets cached.")
+    return 1 if failed else 0
+
+
+def _bench_run(args: argparse.Namespace) -> int:
+    import pandas as pd
+
+    from . import fit
+    from .benchmarks import iter_suite, resolve_suite
+
+    suite = resolve_suite(args.suite)
+    task = Task(args.task) if args.task else None
+    if args.time is None and args.trials is None:
+        args.trials = 50
+
+    rows = []
+    for dataset in iter_suite(suite, task=task):
+        print(f"\n=== {dataset.name} ({dataset.n_samples}x{dataset.n_features}) ===",
+              file=sys.stderr)
+        try:
+            result = fit(
+                dataset.X.assign(**{"__target__": dataset.y}),
+                "__target__",
+                task=dataset.task,
+                learners=_split_list(args.learners),
+                n_trials=args.trials,
+                timeout=args.time,
+                folds=args.folds,
+                sampler=args.sampler,
+                n_jobs=args.jobs,
+                seed=args.seed,
+            )
+        except Exception as exc:
+            print(f"  failed: {type(exc).__name__}: {exc}", file=sys.stderr)
+            rows.append({"dataset": dataset.name, "task": str(dataset.task),
+                         "error": f"{type(exc).__name__}: {exc}"})
+            continue
+
+        rows.append({
+            "dataset": dataset.name,
+            "task": str(dataset.task),
+            "n": dataset.n_samples,
+            "features": dataset.n_features,
+            "metric": result.metric,
+            "cv": round(result.cv_score, 4),
+            "holdout": None if result.holdout_score is None else round(result.holdout_score, 4),
+            "best_learner": result.learner,
+            "trials": len(result.search.records),
+        })
+        print(f"  {result.learner}: cv={result.cv_score:.4f}", file=sys.stderr)
+
+    table = pd.DataFrame(rows)
+    print()
+    print(table.to_string(index=False))
+    if args.out:
+        table.to_csv(args.out, index=False)
+        print(f"\nWritten to {args.out}")
+    return 0
+
+
+def _run_bench(args: argparse.Namespace) -> int:
+    logging.basicConfig(level=logging.INFO, format="%(message)s", stream=sys.stderr)
+    optuna.logging.set_verbosity(optuna.logging.WARNING)
+    if args.bench_command == "list":
+        return _bench_list()
+    if args.bench_command == "fetch":
+        return _bench_fetch(args)
+    return _bench_run(args)
 
 
 def _run_fit(args: argparse.Namespace) -> int:
@@ -168,6 +294,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "learners":
             return _list_learners(args.task)
+        if args.command == "bench":
+            return _run_bench(args)
         return _run_fit(args)
     except KeyboardInterrupt:
         print("\nInterrupted.", file=sys.stderr)

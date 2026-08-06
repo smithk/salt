@@ -11,7 +11,7 @@ from saltml.task import Task
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-IRIS = "data/standard_ml_sets/classification/datasets/standard/iris.arff"
+IRIS = "data/classification/iris.arff"
 
 
 def test_search_finds_a_workable_model_on_iris():

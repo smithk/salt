@@ -101,8 +101,35 @@ encoding a category would receive.
 
 ## Datasets
 
-`data/standard_ml_sets/` holds ~40 ARFF benchmark datasets, used as both a test
-corpus and the bed for comparing search strategies.
+`data/` holds a small offline corpus the test suite depends on — 47
+classification and 2 regression ARFF files, one canonical copy of each, plus
+fixtures in `data/test/`.
+
+For measuring how good SALT actually is, use the benchmark suites. They are
+fetched from [OpenML](https://www.openml.org) on demand into a cache outside
+the repository, because committing a published suite would put hundreds of
+megabytes into git history permanently:
+
+```bash
+saltml bench list                        # suites, contents, cache location
+saltml bench fetch ctr23-lite            # download (seconds)
+saltml bench run smoke --trials 20       # score SALT across a whole suite
+saltml bench run cc18-lite --time 2m -o results.csv
+```
+
+| Suite | Contents |
+|---|---|
+| `smoke` | 5 small datasets, both tasks. Seconds to fetch, minutes to run. |
+| `cc18-lite` | 12 classification tasks from OpenML-CC18 |
+| `ctr23-lite` | 10 regression tasks from OpenML-CTR23 |
+
+Each is a curated sample rather than the full published suite — CC18 is 72
+datasets and several gigabytes, which is a benchmarking session, not a check.
+The samples favour the shapes that break things: mixed types, all-categorical,
+high cardinality, missing values.
+
+The cache lives at `~/.cache/saltml/benchmarks` (override with `SALTML_CACHE`)
+and stores Parquet, so column types survive the round trip.
 
 ## History
 
