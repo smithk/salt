@@ -56,13 +56,18 @@ one, and both are reported.
 |---|---|
 | **Boosted trees** | `lightgbm`, `xgboost`, `catboost`, `hist_gradient_boosting` |
 | **Bagged trees** | `random_forest`, `extra_trees`, `decision_tree` |
+| **Neural** | `tabpfn` — a pre-trained transformer, [see below](#tabpfn) |
 | **Linear** | `logistic_regression`, `ridge_classifier` (classification); `ridge`, `lasso`, `elastic_net` (regression) |
 | **Kernel & instance** | `svm` / `svr`, `knn` |
-| **Other** | `gaussian_nb` (classification), `tabpfn` (both) |
+| **Probabilistic** | `gaussian_nb` (classification) |
 
-`saltml learners` lists them with their preprocessing requirements. The three
-dedicated boosting libraries and TabPFN are optional installs; a missing one is
-an absent learner, not an import error.
+All of these install by default — a tool that recommends a learner should be
+able to recommend the ones that usually win. `saltml learners` lists them with
+their preprocessing requirements.
+
+Each still registers only if its library imports, so an environment where one
+of them cannot load (a missing OpenMP runtime, say) loses that learner rather
+than failing to start.
 
 ## Accuracy is not the only axis
 
@@ -95,13 +100,23 @@ deployment latency guarantee.
 Requires Python 3.10+.
 
 ```bash
-pip install -e .              # core
-pip install -e '.[boost]'     # adds LightGBM / XGBoost / CatBoost
-pip install -e '.[tabpfn]'    # adds TabPFN
-pip install -e '.[dev]'       # pytest
+pip install -e .              # everything, including every learner
+pip install -e '.[dev]'       # adds pytest
 ```
 
-`lightgbm` and `xgboost` need an OpenMP runtime (`libgomp1` on Debian/Ubuntu).
+Two things this pulls in that are worth knowing about:
+
+- **An OpenMP runtime** is needed by LightGBM, XGBoost and CatBoost —
+  `libgomp1` on Debian/Ubuntu. Without it those three fail to import and
+  silently drop out of the registry.
+- **PyTorch**, via TabPFN, is by far the largest dependency. On a machine with
+  no GPU, install the CPU build first to avoid several gigabytes of unusable
+  CUDA wheels:
+
+  ```bash
+  pip install torch --index-url https://download.pytorch.org/whl/cpu
+  pip install -e .
+  ```
 
 ## Usage
 
