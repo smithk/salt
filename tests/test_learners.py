@@ -13,10 +13,10 @@ import pandas as pd
 import pytest
 from sklearn.datasets import make_classification, make_regression
 
-from salt.data import load
-from salt.learners import REGISTRY, for_task, resolve
-from salt.search import build_pipeline
-from salt.task import Task
+from saltml.data import load
+from saltml.learners import REGISTRY, for_task, resolve
+from saltml.search import build_pipeline
+from saltml.task import Task
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 

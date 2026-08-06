@@ -12,8 +12,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import salt
-from salt.data import as_categorical, load, suspect_categorical
+import saltml
+from saltml.data import as_categorical, load, suspect_categorical
 
 
 def _coded_frame(n: int = 60) -> pd.DataFrame:
@@ -42,7 +42,7 @@ def test_declaring_a_column_categorical_moves_it():
 
 def test_declared_column_is_one_hot_encoded():
     dataset = load(_coded_frame(), categorical=["site"], warn_suspicious=False)
-    from salt.preprocess import make_preprocessor
+    from saltml.preprocess import make_preprocessor
 
     encoded = make_preprocessor(dataset, scale=False).fit_transform(dataset.X)
     # site contributes three indicator columns instead of one numeric column.
@@ -63,14 +63,14 @@ def test_suspect_flags_codes_but_not_measurements_or_binary():
 
 
 def test_warning_names_the_column_and_the_fix(caplog):
-    with caplog.at_level(logging.WARNING, logger="salt"):
+    with caplog.at_level(logging.WARNING, logger="saltml"):
         load(_coded_frame())
     assert "site" in caplog.text
     assert "--categorical" in caplog.text
 
 
 def test_no_warning_once_declared(caplog):
-    with caplog.at_level(logging.WARNING, logger="salt"):
+    with caplog.at_level(logging.WARNING, logger="saltml"):
         load(_coded_frame(), categorical=["site"])
     assert "site" not in caplog.text
 
@@ -82,7 +82,7 @@ def test_as_categorical_preserves_missing_values():
 
 
 def test_holdout_split_keeps_the_declaration():
-    result = salt.fit(
+    result = saltml.fit(
         _coded_frame(120), categorical=["site"], learners=["decision_tree"],
         n_trials=2, folds=3, seed=0,
     )
@@ -101,9 +101,9 @@ def test_declaring_categoricals_changes_what_a_linear_model_learns():
     target = np.where(site == 2, 10.0, 0.0) + rng.normal(scale=0.1, size=300)
     frame = pd.DataFrame({"site": site, "noise": rng.normal(size=300), "y": target})
 
-    numeric = salt.fit(frame, learners=["ridge"], n_trials=4, folds=3,
+    numeric = saltml.fit(frame, learners=["ridge"], n_trials=4, folds=3,
                        holdout=0.0, seed=0)
-    encoded = salt.fit(frame, categorical=["site"], learners=["ridge"],
+    encoded = saltml.fit(frame, categorical=["site"], learners=["ridge"],
                        n_trials=4, folds=3, holdout=0.0, seed=0)
 
     assert numeric.cv_score < 0.2       # ordering cannot capture it

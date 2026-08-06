@@ -3,11 +3,11 @@ import optuna
 import pandas as pd
 import pytest
 
-import salt
-from salt.data import load
-from salt.metrics import resolve_metric
-from salt.search import search
-from salt.task import Task
+import saltml
+from saltml.data import load
+from saltml.metrics import resolve_metric
+from saltml.search import search
+from saltml.task import Task
 
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
@@ -54,19 +54,19 @@ def test_folds_shrink_to_smallest_class():
 
 
 def test_fit_reports_an_untouched_holdout_score():
-    result = salt.fit(IRIS, n_trials=10, folds=3, holdout=0.3, seed=0)
+    result = saltml.fit(IRIS, n_trials=10, folds=3, holdout=0.3, seed=0)
     assert result.holdout_score is not None
     assert 0.0 <= result.holdout_score <= 1.0
     assert result.learner in [r.learner for r in result.search.records]
 
 
 def test_fit_without_holdout_reports_none():
-    result = salt.fit(IRIS, n_trials=6, folds=3, holdout=0.0, seed=0)
+    result = saltml.fit(IRIS, n_trials=6, folds=3, holdout=0.0, seed=0)
     assert result.holdout_score is None
 
 
 def test_fitted_model_predicts():
-    result = salt.fit(IRIS, n_trials=6, folds=3, seed=0)
+    result = saltml.fit(IRIS, n_trials=6, folds=3, seed=0)
     predictions = result.predict(result.dataset.X.head(5))
     assert len(predictions) == 5
 
@@ -74,7 +74,7 @@ def test_fitted_model_predicts():
 def test_model_round_trips_through_disk(tmp_path):
     import joblib
 
-    result = salt.fit(IRIS, n_trials=6, folds=3, seed=0)
+    result = saltml.fit(IRIS, n_trials=6, folds=3, seed=0)
     path = result.save(tmp_path / "model.joblib")
     reloaded = joblib.load(path)
     assert list(reloaded.predict(result.dataset.X.head(3))) == list(
@@ -93,7 +93,7 @@ def test_regression_path_end_to_end():
     frame = pd.DataFrame(rng.normal(size=(120, 4)), columns=list("abcd"))
     frame["site"] = rng.choice(["x", "y"], 120)  # categorical feature
     frame["target"] = frame["a"] * 3 - frame["b"] + rng.normal(scale=0.1, size=120)
-    result = salt.fit(frame, n_trials=10, folds=3, seed=0)
+    result = saltml.fit(frame, n_trials=10, folds=3, seed=0)
     assert result.search.task is Task.REGRESSION
     assert result.metric == "r2"
     assert result.cv_score > 0.5

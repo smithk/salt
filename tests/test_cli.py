@@ -2,7 +2,7 @@ import argparse
 
 import pytest
 
-from salt.cli import main, parse_duration
+from saltml.cli import main, parse_duration
 
 IRIS = "data/standard_ml_sets/classification/datasets/standard/iris.arff"
 

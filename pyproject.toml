@@ -42,10 +42,10 @@ tabpfn = ["tabpfn>=2.2,<3"]
 dev = ["pytest>=7"]
 
 [project.scripts]
-salt = "salt.cli:main"
+saltml = "saltml.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/salt"]
+packages = ["src/saltml"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

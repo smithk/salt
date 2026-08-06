@@ -12,7 +12,7 @@ from .tabpfn import TABPFN_LEARNERS, tabpfn_available
 
 __all__ = ["Learner", "Space", "REGISTRY", "for_task", "resolve", "applicable"]
 
-log = logging.getLogger("salt")
+log = logging.getLogger("saltml")
 
 REGISTRY: dict[Task, dict[str, Learner]] = {
     Task.CLASSIFICATION: {learner.name: learner for learner in CLASSIFIERS},

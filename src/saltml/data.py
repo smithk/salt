@@ -18,7 +18,7 @@ from .task import Task
 
 __all__ = ["Dataset", "load", "detect_task", "as_categorical", "suspect_categorical"]
 
-log = logging.getLogger("salt")
+log = logging.getLogger("saltml")
 
 # A numeric target is treated as class labels rather than a regression target
 # when it takes few enough distinct values, both absolutely and relative to the

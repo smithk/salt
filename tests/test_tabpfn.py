@@ -12,17 +12,17 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import salt
-from salt.data import load
-from salt.learners import REGISTRY, applicable, resolve
-from salt.learners.tabpfn import (
+import saltml
+from saltml.data import load
+from saltml.learners import REGISTRY, applicable, resolve
+from saltml.learners.tabpfn import (
     MAX_CLASSES,
     MAX_FEATURES,
     MAX_SAMPLES,
     TABPFN_LEARNERS,
     tabpfn_available,
 )
-from salt.task import Task
+from saltml.task import Task
 
 needs_tabpfn = pytest.mark.skipif(not tabpfn_available(), reason="tabpfn not installed")
 
@@ -81,7 +81,7 @@ def test_feature_limit_counts_encoded_width_not_raw_columns():
 
 def test_excluded_learner_is_reported_loudly_when_asked_for(caplog):
     dataset = load(_frame(n_samples=200, n_classes=MAX_CLASSES + 5), warn_suspicious=False)
-    with caplog.at_level(logging.INFO, logger="salt"):
+    with caplog.at_level(logging.INFO, logger="saltml"):
         usable, excluded = applicable([CLASSIFIER], dataset, requested=True)
     assert usable == []
     assert "tabpfn" in excluded
@@ -98,7 +98,7 @@ def test_classical_learners_have_no_limits():
 def test_search_excludes_tabpfn_and_carries_on(caplog):
     """A dataset past the limits must still search, just without TabPFN."""
     dataset = load(_frame(n_samples=300, n_classes=MAX_CLASSES + 5), warn_suspicious=False)
-    result = salt.search(dataset, learners=["tabpfn", "decision_tree"],
+    result = saltml.search(dataset, learners=["tabpfn", "decision_tree"],
                          n_trials=2, folds=3, seed=0)
     assert {r.learner for r in result.records} == {"decision_tree"}
 
@@ -106,13 +106,13 @@ def test_search_excludes_tabpfn_and_carries_on(caplog):
 def test_search_errors_when_nothing_is_applicable():
     dataset = load(_frame(n_samples=200, n_classes=MAX_CLASSES + 5), warn_suspicious=False)
     with pytest.raises(ValueError, match="No learner can be used"):
-        salt.search(dataset, learners=["tabpfn"], n_trials=1, folds=3, seed=0)
+        saltml.search(dataset, learners=["tabpfn"], n_trials=1, folds=3, seed=0)
 
 
 @needs_tabpfn
 @pytest.mark.slow
 def test_tabpfn_fits_and_scores_on_iris():
-    result = salt.search(
+    result = saltml.search(
         load("data/standard_ml_sets/classification/datasets/standard/iris.arff"),
         learners=["tabpfn"], n_trials=2, folds=3, seed=0,
     )
@@ -126,6 +126,6 @@ def test_tabpfn_regression_runs():
     rng = np.random.default_rng(0)
     frame = pd.DataFrame(rng.normal(size=(60, 3)), columns=list("abc"))
     frame["y"] = frame["a"] * 2 + rng.normal(scale=0.1, size=60)
-    result = salt.search(load(frame), learners=["tabpfn"], n_trials=1, folds=3, seed=0)
+    result = saltml.search(load(frame), learners=["tabpfn"], n_trials=1, folds=3, seed=0)
     assert result.task is Task.REGRESSION
     assert result.n_failed == 0

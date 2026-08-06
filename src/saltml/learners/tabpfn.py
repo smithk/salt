@@ -29,7 +29,7 @@ from .base import Learner, Space
 
 __all__ = ["TABPFN_LEARNERS", "tabpfn_available"]
 
-log = logging.getLogger("salt")
+log = logging.getLogger("saltml")
 
 # Pre-training limits for the v2 line. Exceeding them raises rather than
 # degrading, so they are treated as hard applicability bounds.

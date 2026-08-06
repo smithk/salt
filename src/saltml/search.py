@@ -23,7 +23,7 @@ from .task import Task
 
 __all__ = ["SearchResult", "TrialRecord", "search", "build_pipeline"]
 
-log = logging.getLogger("salt")
+log = logging.getLogger("saltml")
 
 
 @dataclass
@@ -165,7 +165,7 @@ def search(
     study = optuna.create_study(
         direction="maximize",
         sampler=_make_sampler(sampler, seed),
-        study_name=f"salt:{dataset.name}",
+        study_name=f"saltml:{dataset.name}",
     )
 
     failures: list[str] = []

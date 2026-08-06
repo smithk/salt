@@ -39,7 +39,7 @@ __all__ = [
     "search",
 ]
 
-log = logging.getLogger("salt")
+log = logging.getLogger("saltml")
 
 
 @dataclass

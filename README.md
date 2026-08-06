@@ -4,13 +4,13 @@ Point it at a dataset. It searches over algorithms and their hyperparameters,
 and hands back a fitted model plus a ranked table of what worked.
 
 ```bash
-salt fit data.csv --target label --time 10m -o model.joblib
+saltml fit data.csv --target label --time 10m -o model.joblib
 ```
 
 ```python
-import salt
+import saltml
 
-result = salt.fit("data.csv", target="label", timeout=600)
+result = saltml.fit("data.csv", target="label", timeout=600)
 print(result.summary())
 print(result.search.leaderboard())
 result.model.predict(new_rows)
@@ -70,11 +70,11 @@ TabPFN run needs network access.
 ## Usage
 
 ```
-salt fit DATA [--target COL] [--categorical COLS] [--time 10m | --trials N]
-              [--metric M] [--learners a,b] [--folds K] [--holdout F]
-              [--sampler tpe|random|hypercube] [--jobs N] [-o model.joblib]
+saltml fit DATA [--target COL] [--categorical COLS] [--time 10m | --trials N]
+                [--metric M] [--learners a,b] [--folds K] [--holdout F]
+                [--sampler tpe|random|hypercube] [--jobs N] [-o model.joblib]
 
-salt learners [--task classification|regression]
+saltml learners [--task classification|regression]
 ```
 
 The target defaults to the last column. Task type is detected from the target
@@ -91,9 +91,8 @@ written to a file. Treated as a number, it tells the model that site 3 is three
 times site 1, and the result is quietly wrong rather than obviously broken:
 
 ```bash
-salt fit sites.parquet --learners ridge              # r2 = -0.003
-salt fit sites.parquet --learners ridge \
-    --categorical site                               # r2 =  0.998
+saltml fit sites.parquet --learners ridge                 # r2 = -0.003
+saltml fit sites.parquet --learners ridge --categorical site   # r2 = 0.998
 ```
 
 SALT warns when a numeric column holds few distinct whole numbers and names the

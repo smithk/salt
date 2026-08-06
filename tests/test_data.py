@@ -2,8 +2,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from salt.data import Dataset, detect_task, load
-from salt.task import Task
+from saltml.data import Dataset, detect_task, load
+from saltml.task import Task
 
 ARFF = "data/standard_ml_sets/classification/datasets/standard/iris.arff"
 

@@ -34,10 +34,10 @@ def parse_duration(text: str) -> float:
 
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="salt",
+        prog="saltml",
         description="Suggest a machine learning model and hyperparameters for your dataset.",
     )
-    parser.add_argument("--version", action="version", version=f"salt {__version__}")
+    parser.add_argument("--version", action="version", version=f"saltml {__version__}")
     subcommands = parser.add_subparsers(dest="command", required=True)
 
     run = subcommands.add_parser("fit", help="search for the best model and fit it")
