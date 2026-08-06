@@ -4,6 +4,61 @@ Point it at a table. It searches across algorithms and their hyperparameters
 and hands back a fitted model, a ranked table of what worked, and what the
 accuracy costs to serve.
 
+Classification and regression, 13 learners each — from linear models to
+gradient-boosted trees to a pre-trained transformer.
+
+## Install
+
+Requires Python 3.10+.
+
+```bash
+git clone https://github.com/smithk/salt.git
+cd salt
+python -m venv .venv && source .venv/bin/activate
+pip install -e .
+saltml --version
+```
+
+On a machine with **no GPU**, install the CPU build of PyTorch first — the
+default resolution pulls several gigabytes of CUDA wheels you cannot use:
+
+```bash
+pip install torch --index-url https://download.pytorch.org/whl/cpu
+pip install -e .
+```
+
+LightGBM, XGBoost and CatBoost need an OpenMP runtime — `libgomp1` on
+Debian/Ubuntu, `sudo apt install libgomp1`. See
+[Troubleshooting](#troubleshooting) if a learner is missing.
+
+## Quickstart: run a benchmark
+
+Nothing to prepare and no data of your own needed. Three commands:
+
+```bash
+saltml bench list                 # what's available, and where the cache goes
+saltml bench fetch smoke          # 5 datasets, a few seconds
+saltml bench run smoke --time 15s --folds 3
+```
+
+```
+    dataset           task   n  features            metric     cv  holdout        best_learner  trials
+       iris classification 150         4 balanced_accuracy 0.9729   0.9722                 svm     893
+       wine classification 178        13 balanced_accuracy 0.9804   1.0000 logistic_regression     954
+   breast-w classification 699         9 balanced_accuracy 0.9799   0.9783         extra_trees     922
+  autoPrice     regression 159        15                r2 0.8603   0.9126              tabpfn    1092
+cholesterol     regression 303        13                r2 0.0573   0.0546         elastic_net     637
+```
+
+That takes **about two and a half minutes** on 16 cores. Add `-o results.csv`
+to keep the table.
+
+Every dataset is fetched, task-detected, preprocessed, searched across all 13
+learners, and scored on a holdout it never saw. Nothing lands in the
+repository — see [Benchmarks](#benchmarks) for the larger suites.
+
+## Your own data
+
 ```bash
 saltml fit data.csv --target label --time 10m -o model.joblib
 ```
@@ -13,145 +68,21 @@ import saltml
 
 result = saltml.fit("data.csv", target="label", timeout=600)
 print(result.summary())
-print(result.search.tradeoff())        # accuracy vs prediction cost
-result.model.predict(new_rows)
+print(result.search.tradeoff())          # accuracy vs prediction cost
+print(result.search.leaderboard())       # every configuration tried
 ```
 
-## What it does
+Using the saved model later:
 
-Classification and regression on tabular data. Every candidate is a full
-pipeline — imputation, categorical encoding, optional scaling, then the
-estimator — so mixed CSV files work without preparation.
+```python
+import joblib, pandas as pd
 
-**The budget is wall-clock time, not a trial count.** Learner costs span three
-orders of magnitude: a decision tree fits in hundredths of a second, a TabPFN
-forward pass takes tens. Counting trials treats those as equal units, which
-makes runtime unpredictable and quietly starves the expensive families. A time
-budget is spent in two phases:
-
-1. **Survey** (30%) — every applicable learner gets an equal slice of
-   wall-clock. Guarantees each family is tried at least once, and measures what
-   each one costs.
-2. **Focus** (70%) — [Optuna](https://optuna.org) TPE over the families still in
-   contention, which are those within the top quarter of the observed score
-   spread.
-
-`--trials N` still works and skips the survey. That is the reproducible mode,
-where equal trial counts are the point.
-
-The budget is a target, not a ceiling: a trial already running cannot be
-interrupted, so one slow learner can overshoot. Runs report what they actually
-spent against what was asked for.
-
-**A holdout fraction (25% by default) is withheld before the search starts** and
-scored exactly once at the end. Cross-validation scores are optimistic because
-they are what the search optimised against; the holdout number is the honest
-one, and both are reported.
-
-## Learners
-
-13 for each task. All are searched by default; restrict with `--learners`.
-
-| | |
-|---|---|
-| **Boosted trees** | `lightgbm`, `xgboost`, `catboost`, `hist_gradient_boosting` |
-| **Bagged trees** | `random_forest`, `extra_trees`, `decision_tree` |
-| **Neural** | `tabpfn` — a pre-trained transformer, [see below](#tabpfn) |
-| **Linear** | `logistic_regression`, `ridge_classifier` (classification); `ridge`, `lasso`, `elastic_net` (regression) |
-| **Kernel & instance** | `svm` / `svr`, `knn` |
-| **Probabilistic** | `gaussian_nb` (classification) |
-
-All of these install by default — a tool that recommends a learner should be
-able to recommend the ones that usually win. `saltml learners` lists them with
-their preprocessing requirements.
-
-Each still registers only if its library imports, so an environment where one
-of them cannot load (a missing OpenMP runtime, say) loses that learner rather
-than failing to start.
-
-## Accuracy is not the only axis
-
-The best model and the model you should deploy are often different. SALT
-measures fit cost and prediction cost separately for every trial and reports
-the frontier — the configurations beaten on neither accuracy nor speed:
-
-```
-Accuracy vs prediction cost (nothing here is beaten on both):
-    learner     r2  predict_ms/1k  fit_ms
-        svr 0.5137          29.99     6.0
-      lasso 0.5066          23.22     4.4
-elastic_net 0.5064          22.80     4.4
-```
-
-On that dataset `tabpfn` scored 0.5101 — within 0.8% of the winner — at
-**12,000 ms/1k, some 400× the serving cost**. A single-winner answer cannot
-express that. `result.search.recommended()` returns the cheapest model within
-1% of the best, which is usually the honest answer: differences below a percent
-rarely exceed the noise across folds, while a 400× difference in serving cost
-is real.
-
-Prediction cost is measured per 1,000 rows and includes fixed per-call
-overhead, so on small datasets the absolute figure has a floor of a few tens of
-milliseconds. It is meant for comparing learners on one dataset, not as a
-deployment latency guarantee.
-
-## Install
-
-Requires Python 3.10+.
-
-```bash
-pip install -e .              # everything, including every learner
-pip install -e '.[dev]'       # adds pytest
-```
-
-Two things this pulls in that are worth knowing about:
-
-- **An OpenMP runtime** is needed by LightGBM, XGBoost and CatBoost —
-  `libgomp1` on Debian/Ubuntu. Without it those three fail to import and
-  silently drop out of the registry.
-- **PyTorch**, via TabPFN, is by far the largest dependency. On a machine with
-  no GPU, install the CPU build first to avoid several gigabytes of unusable
-  CUDA wheels:
-
-  ```bash
-  pip install torch --index-url https://download.pytorch.org/whl/cpu
-  pip install -e .
-  ```
-
-## Usage
-
-```
-saltml fit DATA [--target COL] [--task classification|regression]
-                [--categorical COLS] [--time 10m | --trials N]
-                [--metric M] [--learners a,b] [--folds K] [--holdout F]
-                [--sampler tpe|random|hypercube] [--jobs N]
-                [--top N] [-o model.joblib] [-q]
-
-saltml learners [--task ...]
-saltml bench list | fetch SUITE | run SUITE
+model = joblib.load("model.joblib")      # a fitted scikit-learn Pipeline
+model.predict(pd.read_csv("new_rows.csv"))
 ```
 
 The target defaults to the last column. Task type is detected from the target
-and can be forced with `--task`. Defaults: `balanced_accuracy` for
-classification, `r2` for regression, a 60 second budget, 5 folds.
-
-Reads CSV, TSV, ARFF, and Parquet. Prefer Parquet: it keeps column types, so
-categorical columns survive a round trip that CSV flattens.
-
-### Integer-coded categories
-
-A column of site IDs — 1, 2, 3 — is indistinguishable from a measurement once
-written to a file. Treated as a number, it tells the model that site 3 is three
-times site 1, and the result is quietly wrong rather than obviously broken:
-
-```bash
-saltml fit sites.parquet --learners ridge                       # r2 = -0.003
-saltml fit sites.parquet --learners ridge --categorical site    # r2 =  0.998
-```
-
-SALT warns when a numeric column holds few distinct whole numbers and names the
-flag that fixes it. Binary 0/1 columns are not flagged — they are already the
-encoding a category would receive.
+and can be forced with `--task`. Reads CSV, TSV, ARFF and Parquet.
 
 ## Benchmarks
 
@@ -159,32 +90,28 @@ Suites are fetched from [OpenML](https://www.openml.org) on demand into a cache
 outside the repository. Committing a published suite would put hundreds of
 megabytes into git history permanently, and history cannot be shrunk afterwards.
 
-| Suite | Contents |
-|---|---|
-| `smoke` | 5 small datasets, both tasks. Seconds to fetch, minutes to run. |
-| `cc18-lite` | 12 classification tasks from OpenML-CC18 |
-| `ctr23-lite` | 10 regression tasks from OpenML-CTR23 |
+| Suite | Contents | Approximate run time |
+|---|---|---|
+| `smoke` | 5 small datasets, both tasks | ~2.5 min at `--time 15s` |
+| `cc18-lite` | 12 classification tasks from OpenML-CC18 | ~25 min at `--time 20s` |
+| `ctr23-lite` | 10 regression tasks from OpenML-CTR23 | similar |
 
-Each is a curated sample rather than the full published suite — CC18 is 72
-datasets and several gigabytes, which is a benchmarking session, not a check.
-The samples favour the shapes that break things: mixed types, all-categorical,
-high cardinality, missing values.
+Run times are much longer than `--time` × datasets suggests: the budget is per
+dataset, and it overshoots, because a trial already running cannot be
+interrupted. See [Budget allocation](docs/design.md#budget-allocation).
 
-### Worked example: every learner across a whole suite
+Each suite is a curated sample rather than the full published one — CC18 is 72
+datasets and several gigabytes. The samples favour the shapes that break
+things: mixed types, all-categorical, high cardinality, missing values.
 
 ```bash
-# 1. See what is available, and where the cache will go
-saltml bench list
-
-# 2. Download one. Seconds, and nothing lands in the repository.
-saltml bench fetch cc18-lite
-
-# 3. Run every learner across all 12 datasets, 20 seconds each
+saltml bench fetch all                                   # every suite
 saltml bench run cc18-lite --time 20s --folds 3 --jobs 8 -o results.csv
+saltml bench run ctr23-lite --learners lightgbm,ridge    # compare a subset
+saltml bench run smoke --sampler random                  # what is TPE buying?
 ```
 
-Every dataset is fetched, task-detected, preprocessed, searched across all 13
-learners, and scored on a holdout it never saw:
+A full `cc18-lite` run, 12 datasets against all 13 learners:
 
 ```
                          dataset           task    n  features            metric     cv  holdout           best_learner  trials
@@ -205,69 +132,152 @@ climate-model-simulation-crashes classification  540        20 balanced_accuracy
 Seven different learners win across twelve datasets, which is the argument for
 searching rather than defaulting to one favourite. Note also that a 20-second
 budget buys 817 trials on `diabetes` and 58 on `spambase` — the same wall-clock
-against very different per-trial costs, which is exactly what a fixed trial
-count cannot express.
+against very different per-trial costs.
 
-Each run also prints where the budget went:
+The cache lives at `~/.cache/saltml/benchmarks` (override with `SALTML_CACHE`)
+and stores Parquet, so column types survive the round trip.
+
+## Learners
+
+| Family | Members |
+|---|---|
+| **Boosted trees** | `lightgbm`, `xgboost`, `catboost`, `hist_gradient_boosting` |
+| **Bagged trees** | `random_forest`, `extra_trees`, `decision_tree` |
+| **Neural** | `tabpfn` — a pre-trained transformer |
+| **Linear** | `logistic_regression`, `ridge_classifier`; `ridge`, `lasso`, `elastic_net` |
+| **Kernel & instance** | `svm` / `svr`, `knn` |
+| **Probabilistic** | `gaussian_nb` |
+
+All install and are searched by default; restrict with `--learners`. Run
+`saltml learners` to list them. See [docs/learners.md](docs/learners.md) for
+per-learner notes, including TabPFN's size limits and weight downloads.
+
+## How the search works
+
+**The budget is wall-clock time, not a trial count**, because learner costs
+span three orders of magnitude and counting trials treats them as equal. Time
+is spent in two phases: a **survey** giving every learner an equal slice, then
+a **focus** phase running Optuna TPE over the families still in contention.
+`--trials N` skips the survey and is the reproducible mode.
+
+**A holdout fraction (25% by default) is withheld before the search starts**
+and scored exactly once at the end. Cross-validation scores are optimistic
+because they are what the search optimised against; the holdout number is the
+honest one, and both are reported.
+
+Full rationale, including the contention rule and why the budget overshoots:
+[docs/design.md](docs/design.md).
+
+## Accuracy vs prediction cost
+
+The best model and the model you should deploy are often different. SALT
+measures fit cost and prediction cost separately for every trial and reports
+the frontier — configurations beaten on neither accuracy nor speed:
 
 ```
-Focus: logistic_regression, ridge_classifier, extra_trees, decision_tree, svm, gaussian_nb
-       (dropped random_forest, hist_gradient_boosting, knn, lightgbm, xgboost, catboost,
-        tabpfn after the survey).
+Accuracy vs prediction cost (nothing here is beaten on both):
+    learner     r2  predict_ms/1k  fit_ms
+        svr 0.5137          29.99     6.0
+      lasso 0.5066          23.22     4.4
+elastic_net 0.5064          22.80     4.4
 ```
 
-`results.csv` carries the same columns for further analysis. Add `--learners`
-to compare a subset, or `--sampler random` to check how much the TPE sampler is
-actually buying — the same harness answers both.
+On that dataset `tabpfn` scored 0.5101 — within 0.8% of the winner — at
+**12,000 ms/1k, some 400× the serving cost**. A single-winner answer cannot
+express that. `result.search.recommended()` returns the cheapest model within
+1% of the best, which is usually the honest answer.
 
-To fetch everything at once: `saltml bench fetch all`. The cache lives at
-`~/.cache/saltml/benchmarks` (override with `SALTML_CACHE`) and stores Parquet,
-so column types survive the round trip.
+Prediction cost is per 1,000 rows and includes fixed per-call overhead, so on
+small datasets it has a floor of a few tens of milliseconds. It compares
+learners on one dataset; it is not a latency guarantee.
 
-## TabPFN
+## Data formats
 
-TabPFN is a transformer pre-trained on synthetic tabular data. It is not
-trained on your data at all: the training rows are given to the network as
-context and it predicts in a single forward pass. On small tables it is often
-the strongest thing in the registry.
+Reads CSV, TSV, ARFF and Parquet. **Prefer Parquet**: it keeps column types, so
+categorical columns survive a round trip that CSV flattens.
 
-Two things make it unlike the other learners:
+### Integer-coded categories
 
-- **It has almost no hyperparameters**, so the search spends few trials on it.
-- **It has hard size limits** from pre-training — 10,000 samples, 500 encoded
-  features, 10 classes. Past those it is excluded before the search starts,
-  with the reason printed, rather than failing every trial.
-
-On CPU it is roughly 25–1000× slower per trial than the classical learners.
-
-Version 2.x downloads its weights with no account. Version 8.x requires
-registering at [ux.priorlabs.ai](https://ux.priorlabs.ai), accepting the
-licence, and setting `TABPFN_TOKEN`. Both work — the pin defaults to 2.x so the
-tool runs out of the box. Weights are fetched on first use, so the first TabPFN
-run needs network access.
-
-## Development
+A column of site IDs — 1, 2, 3 — is indistinguishable from a measurement once
+written to a file. Treated as a number, it tells the model that site 3 is three
+times site 1, and the result is quietly wrong rather than obviously broken:
 
 ```bash
-pytest                    # everything
-pytest -m "not slow"      # skip network and model-weight tests
+saltml fit sites.parquet --learners ridge                       # r2 = -0.003
+saltml fit sites.parquet --learners ridge --categorical site    # r2 =  0.998
 ```
 
-`data/` holds a small offline corpus the tests depend on — 47 classification
-and 2 regression ARFF files, one canonical copy of each.
+SALT warns when a numeric column holds few distinct whole numbers and names the
+flag that fixes it. Binary 0/1 columns are not flagged — they are already the
+encoding a category would receive.
 
-Malformed-input fixtures are not stored. `tests/test_malformed.py` generates
-them: a file whose only purpose is to be broken is cheaper to write in three
-lines than to carry in git forever, and generating it documents exactly what is
-wrong with it.
+## Command reference
+
+```
+saltml fit DATA [--target COL] [--task classification|regression]
+                [--categorical COLS] [--time 10m | --trials N]
+                [--metric M] [--learners a,b] [--folds K] [--holdout F]
+                [--sampler tpe|random|hypercube] [--jobs N]
+                [--top N] [-o model.joblib] [-q]
+
+saltml learners [--task ...]
+
+saltml bench list
+saltml bench fetch SUITE|all [--refresh]
+saltml bench run SUITE [--task ...] [--time D | --trials N] [--learners a,b]
+                       [--folds K] [--sampler S] [--jobs N] [-o results.csv]
+```
+
+Defaults: `balanced_accuracy` for classification, `r2` for regression, a
+60 second budget, 5 folds, 25% holdout, all cores.
+
+## Troubleshooting
+
+**A learner is missing from `saltml learners`.** Its library failed to import.
+For `lightgbm`, `xgboost` or `catboost` this is almost always a missing OpenMP
+runtime: `sudo apt install libgomp1`. Check with
+`python -c "import lightgbm"`.
+
+**`pip install` pulled gigabytes of NVIDIA packages.** TabPFN brings PyTorch,
+which resolves to the CUDA build by default. Install the CPU build first (see
+[Install](#install)).
+
+**TabPFN asks for a licence token.** You have version 8.x, which requires
+registering at [ux.priorlabs.ai](https://ux.priorlabs.ai) and setting
+`TABPFN_TOKEN`. The pinned 2.x line needs no account —
+`pip install 'tabpfn>=2.2,<3'`.
+
+**A run took far longer than `--time`.** Expected. The budget is per dataset,
+and a trial already running cannot be interrupted, so one slow learner
+overshoots. Runs print elapsed against requested.
+
+**`--sampler hypercube` refuses.** Not ported yet — see
+[History](#history). Use `tpe` or `random`.
+
+**Scores look impossibly good.** Check for a leaked identifier column, and
+compare the cross-validation score against the holdout: a large gap between
+them is the signal.
+
+## Citing
+
+If you use SALT in published work, please cite the repository. The
+2013–2014 prototype is preserved at the `v0.1-2014` tag.
+
+```bibtex
+@software{salt,
+  title  = {SALT: Suggest A Learner for Tabular data},
+  author = {Bermudez-Chacon, Roger and Smith, Kevin and Horvath, Peter},
+  url    = {https://github.com/smithk/salt},
+  year   = {2026}
+}
+```
 
 ## History
 
 SALT began in 2013–2014 as a research prototype by Roger Bermudez-Chacon,
 Kevin Smith, and Peter Horvath — a CASH solver (combined algorithm selection
 and hyperparameter optimisation) contemporary with Auto-WEKA. It was written
-before deep learning reshaped the field, in Python 2, against scikit-learn
-0.14.
+before deep learning reshaped the field, in Python 2, against scikit-learn 0.14.
 
 The current version keeps the ideas worth keeping — the two-stage evaluation
 protocol, and searching algorithms and hyperparameters jointly — and replaces
@@ -278,7 +288,19 @@ there were none that ran.
 
 The original **shrinking-hypercube optimiser is not yet ported**; `--sampler
 hypercube` says so rather than pretending. Restoring it, and benchmarking it
-against TPE across the suites above, is the outstanding piece of work.
+against TPE across the suites above, is the outstanding piece of work — see
+[docs/design.md](docs/design.md#what-is-not-ported).
 
 The 2014 implementation is preserved at the `v0.1-2014` tag and on the `master`
 branch.
+
+## Licence
+
+**Not yet determined.** `pyproject.toml` currently declares `Proprietary`,
+inherited from the 2014 prototype, and there is no LICENSE file — which means
+default copyright applies and no reuse is permitted. If you intend this to be
+usable by others, add a licence.
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md).
