@@ -83,11 +83,23 @@ class FitResult:
         budget = self.search.budget_seconds
         if budget is not None:
             over = "" if self.search.elapsed_seconds <= budget * 1.1 else "  (over: a trial in flight cannot be cut short)"
+            # Pruned trials are absent from `records`, so reporting only those
+            # would understate the work by however much pruning saved.
+            pruned = (
+                f" (+{self.search.n_pruned} stopped early)" if self.search.n_pruned else ""
+            )
             lines.append(
                 f"spent:  {self.search.elapsed_seconds:.0f}s of a {budget:.0f}s budget"
-                f" across {len(self.search.records)} trials{over}"
+                f" across {len(self.search.records)} trials{pruned}{over}"
             )
-        lines.append(f"params: {self.params}")
+        members = getattr(self.model, "members", None)
+        if members is not None:
+            # An ensemble was fitted, so the single best above describes the
+            # strongest member rather than what will actually do the predicting.
+            names = ", ".join(sorted({name for name, _ in members}))
+            lines.append(f"model:  ensemble of {len(members)} ({names})")
+        else:
+            lines.append(f"params: {self.params}")
         return "\n".join(lines)
 
 
@@ -104,6 +116,9 @@ def fit(
     folds: int = 5,
     holdout: float = 0.25,
     sampler: str = "tpe",
+    pruner: str | None = "median",
+    warm_start: bool = True,
+    ensemble: bool = False,
     n_jobs: int = -1,
     seed: int | None = 0,
     runner: Runner | None = None,
@@ -135,6 +150,8 @@ def fit(
         timeout=timeout,
         folds=folds,
         sampler=sampler,
+        pruner=pruner,
+        warm_start=warm_start,
         runner=runner or LocalRunner(n_jobs=n_jobs),
         seed=seed,
         progress=progress,
@@ -144,6 +161,16 @@ def fit(
     learner = resolve(dataset.task, [best.learner])[0]
     model = build_pipeline(train, learner, best.params)
     model.fit(train.X, train.y)
+
+    if ensemble:
+        from .ensemble import build_ensemble
+
+        # Membership is decided on out-of-fold predictions, never on the
+        # holdout: choosing against the holdout would spend the one honest
+        # estimate the tool has.
+        combined = build_ensemble(train, result, folds=folds, seed=seed, n_jobs=n_jobs)
+        if combined is not None:
+            model = combined
 
     holdout_score = None
     if held_out is not None:

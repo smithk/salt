@@ -67,10 +67,17 @@ Flags on `Learner`:
 | `needs_scaling` | Distance- and margin-based methods. Trees are invariant and pay only the cost. |
 | `seedable` | Whether the estimator accepts `random_state`. |
 | `handles_categorical` | Skip one-hot encoding and pass the raw columns. Only worth it where the learner's own handling beats one-hot, as CatBoost's does. |
-| `applies` | Return a reason string when a dataset is out of range, or `None`. Used for TabPFN's pre-training size limits. |
+| `applies` | Return a reason string when a dataset is out of range, or `None`. Used for TabPFN's pre-training size limits, and for its much lower CPU-only limit. |
 
 Optional dependencies belong behind an import guard so a missing library is an
 absent learner rather than an import error — see `learners/boosting.py`.
+
+If the learner has a configuration that is strong across most tabular data,
+add it to `src/saltml/portfolio.py` so the search starts there instead of
+finding its way. `tests/test_portfolio.py` checks every entry against the
+learner's declared space: a queued trial with a misspelled parameter is
+silently ignored by Optuna rather than rejected, so a typo would turn the warm
+start into an ordinary random trial and nothing would look wrong.
 
 ## Conventions
 

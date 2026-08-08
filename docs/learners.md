@@ -36,6 +36,16 @@ encoded features, 10 classes. Past those it is excluded before the search
 starts, with the reason printed, rather than failing every trial. That is what
 `Learner.applies` exists for.
 
+**Without a GPU the binding limit is far lower: 1,000 samples**, and TabPFN
+refuses outright rather than merely running slowly. That limit is checked too,
+because it fails in a way the pre-training one does not. Cross-validation fits
+on a fraction of the data, so on a 1,372-row dataset every fold trained on ~915
+rows, stayed under the limit, and TabPFN scored 1.0 and *won* — and then the
+final refit on the full 1,029-row training split crossed the limit and raised,
+losing the entire run. A learner that wins and then cannot be delivered is
+worse than one that is excluded up front. Set
+`TABPFN_ALLOW_CPU_LARGE_DATASET=1` to accept the speed instead.
+
 **It is slow on CPU** — roughly 25–1000× slower per trial than the classical
 learners, and slow at *prediction* specifically, which is the cost that matters
 at deployment. A GPU changes this substantially; nothing else in the registry

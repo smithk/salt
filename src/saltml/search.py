@@ -53,6 +53,9 @@ class SearchResult:
     records: list[TrialRecord]
     study: optuna.Study = field(repr=False)
     n_failed: int = 0
+    #: Trials stopped early by the pruner. Distinct from ``n_failed``: these
+    #: were working, just not well enough to be worth finishing.
+    n_pruned: int = 0
     #: Learners ruled out before the search, mapped to why.
     excluded: dict[str, str] = field(default_factory=dict)
     #: Learners that were tried but never once succeeded, mapped to the first error.
@@ -253,6 +256,8 @@ def search(
     timeout: float | None = None,
     folds: int = 5,
     sampler: str | optuna.samplers.BaseSampler = "tpe",
+    pruner: str | optuna.pruners.BasePruner | None = None,
+    warm_start: bool = True,
     runner: Runner | None = None,
     seed: int | None = 0,
     progress: Callable[[int, TrialRecord | None], None] | None = None,
@@ -293,9 +298,12 @@ def search(
 
     failures: list[str] = []
     failures_by_learner: dict[str, str] = {}
+    pruned_early: list[int] = []  # counted across phases, so not read off one study
     counter = itertools.count()
 
-    def make_objective(offered: list[str], phase: str) -> Callable[[optuna.Trial], float]:
+    def make_objective(
+        offered: list[str], phase: str, *, prunable: bool = False
+    ) -> Callable[[optuna.Trial], float]:
         def objective(trial: optuna.Trial) -> float:
             name = trial.suggest_categorical("learner", offered)
             learner = by_name[name]
@@ -308,15 +316,21 @@ def search(
                     # Failed convergence is information the score already
                     # carries; emitting it per fold would bury the output.
                     warnings.simplefilter("ignore")
-                    scored = cross_validate(
+                    scored = _evaluate(
+                        trial,
                         pipeline,
-                        dataset.X,
-                        dataset.y,
-                        scoring=metric_name,
-                        cv=splitter,
+                        dataset,
+                        metric_name,
+                        splitter,
                         n_jobs=active_runner.n_jobs,
-                        error_score="raise",
+                        prunable=prunable,
                     )
+            except optuna.TrialPruned:
+                # Stopped early on purpose. Not a failure, and must not be
+                # counted as one — the generic handler below would do exactly
+                # that, since TrialPruned is an ordinary exception.
+                pruned_early.append(1)
+                raise
             except Exception as exc:  # a bad configuration must not end the search
                 failures.append(f"{name}: {type(exc).__name__}: {exc}")
                 failures_by_learner.setdefault(name, f"{type(exc).__name__}: {exc}")
@@ -349,12 +363,19 @@ def search(
         phase_sampler: optuna.samplers.BaseSampler,
         phase_trials: int | None,
         phase_timeout: float | None,
+        prunable: bool = False,
+        warm: bool = False,
     ) -> tuple[list[TrialRecord], optuna.Study]:
         study = optuna.create_study(
             direction="maximize",
             sampler=phase_sampler,
+            pruner=_make_pruner(pruner) if prunable else optuna.pruners.NopPruner(),
             study_name=f"saltml:{dataset.name}:{phase}",
         )
+        if warm and warm_start:
+            from .portfolio import enqueue_portfolio
+
+            enqueue_portfolio(study, dataset.task, offered)
 
         def _on_trial(_: optuna.Study, trial: optuna.trial.FrozenTrial) -> None:
             if progress is not None:
@@ -362,7 +383,7 @@ def search(
 
         active_runner.optimize(
             study,
-            make_objective(offered, phase),
+            make_objective(offered, phase, prunable=prunable),
             n_trials=phase_trials,
             timeout=phase_timeout,
             callbacks=[_on_trial],
@@ -380,6 +401,8 @@ def search(
             phase_sampler=_make_sampler(sampler, seed),
             phase_trials=n_trials,
             phase_timeout=None,
+            prunable=True,
+            warm=True,
         )
     else:
         survey_budget = timeout * SURVEY_FRACTION
@@ -395,6 +418,12 @@ def search(
                 phase_sampler=optuna.samplers.RandomSampler(seed=seed),
                 phase_trials=None,
                 phase_timeout=slice_each,
+                # The survey is where each learner is first seen, so it is
+                # where a strong starting configuration is worth most. The
+                # focus phase that follows is deliberately not warm-started:
+                # it is a separate study, so it would re-run configurations
+                # the survey has already measured.
+                warm=True,
             )
             records.extend(found)
 
@@ -412,6 +441,10 @@ def search(
                 phase_sampler=_make_sampler(sampler, seed),
                 phase_trials=None,
                 phase_timeout=remaining,
+                # The survey deliberately does not prune: its fixed slice per
+                # learner is what measures cost, and cutting it short would
+                # decide the algorithm choice on partial evidence.
+                prunable=True,
             )
             records.extend(found)
 
@@ -433,6 +466,7 @@ def search(
         records=records,
         study=study,
         n_failed=len(failures),
+        n_pruned=len(pruned_early),
         excluded=excluded,
         never_worked=never_worked,
         budget_seconds=timeout,
@@ -456,6 +490,86 @@ def _to_record(trial: optuna.trial.FrozenTrial) -> TrialRecord | None:
     )
 
 
+#: Folds evaluated between pruning decisions. Not one at a time: fold-level
+#: parallelism is how a trial gets its speed, so a chunk is still evaluated in
+#: parallel and the gap between chunks is where a hopeless configuration is
+#: dropped. Two buys a decision after 40% of a 5-fold trial while keeping most
+#: of the parallelism.
+PRUNE_CHUNK = 2
+
+
+def _evaluate(
+    trial: optuna.Trial,
+    pipeline: Pipeline,
+    dataset: Dataset,
+    metric_name: str,
+    splitter: Any,
+    *,
+    n_jobs: int,
+    prunable: bool,
+) -> dict[str, np.ndarray]:
+    """Cross-validate, optionally stopping early on a hopeless configuration.
+
+    Without pruning this is one ``cross_validate`` call, exactly as before.
+    With it, folds are evaluated in chunks and the running mean is reported to
+    Optuna between them, which is what a pruner needs to compare this trial
+    against the ones already finished.
+    """
+    splits = list(splitter.split(dataset.X, dataset.y))
+    step = PRUNE_CHUNK if prunable else len(splits)
+    scores: list[float] = []
+    fit_times: list[float] = []
+    score_times: list[float] = []
+
+    for start in range(0, len(splits), step):
+        part = cross_validate(
+            pipeline,
+            dataset.X,
+            dataset.y,
+            scoring=metric_name,
+            cv=splits[start : start + step],
+            n_jobs=n_jobs,
+            error_score="raise",
+        )
+        scores.extend(part["test_score"])
+        fit_times.extend(part["fit_time"])
+        score_times.extend(part["score_time"])
+        if prunable and start + step < len(splits):
+            trial.report(float(np.mean(scores)), step=len(scores))
+            if trial.should_prune():
+                raise optuna.TrialPruned()
+
+    return {
+        "test_score": np.asarray(scores),
+        "fit_time": np.asarray(fit_times),
+        "score_time": np.asarray(score_times),
+    }
+
+
+def _make_pruner(
+    pruner: str | optuna.pruners.BasePruner | None,
+) -> optuna.pruners.BasePruner:
+    """Resolve a pruner. ``None`` means run every trial to completion."""
+    if pruner is None or pruner == "none":
+        return optuna.pruners.NopPruner()
+    if isinstance(pruner, optuna.pruners.BasePruner):
+        return pruner
+    key = pruner.lower()
+    if key == "median":
+        # Warm-up matters more here than in a typical Optuna study: the first
+        # trials of each learner are the only evidence that learner has, and
+        # pruning them on the strength of a different learner's head start
+        # would decide the algorithm choice before it has been measured.
+        return optuna.pruners.MedianPruner(n_startup_trials=10, n_warmup_steps=0)
+    if key == "asha":
+        return optuna.pruners.SuccessiveHalvingPruner()
+    if key == "hyperband":
+        return optuna.pruners.HyperbandPruner()
+    raise ValueError(
+        f"Unknown pruner {pruner!r}. Choose from: none, median, asha, hyperband."
+    )
+
+
 def _make_sampler(
     sampler: str | optuna.samplers.BaseSampler, seed: int | None
 ) -> optuna.samplers.BaseSampler:
@@ -464,15 +578,18 @@ def _make_sampler(
     key = sampler.lower()
     if key == "tpe":
         return optuna.samplers.TPESampler(seed=seed)
+    if key == "tpe-mv":
+        # Models parameters jointly instead of one at a time, and groups them
+        # by which trials actually defined them — which is what a space like
+        # this one is, where each learner contributes its own parameters and
+        # they are absent from every trial that chose a different learner.
+        return optuna.samplers.TPESampler(seed=seed, multivariate=True, group=True)
     if key == "random":
         return optuna.samplers.RandomSampler(seed=seed)
     if key == "hypercube":
-        try:
-            from .hypercube import ShrinkingHypercubeSampler
-        except ImportError as exc:  # pragma: no cover - until the port lands
-            raise ValueError(
-                "The shrinking-hypercube sampler has not been ported yet. "
-                "Use --sampler tpe or --sampler random."
-            ) from exc
+        from .hypercube import ShrinkingHypercubeSampler
+
         return ShrinkingHypercubeSampler(seed=seed)
-    raise ValueError(f"Unknown sampler {sampler!r}. Choose from: tpe, random, hypercube.")
+    raise ValueError(
+        f"Unknown sampler {sampler!r}. Choose from: tpe, tpe-mv, random, hypercube."
+    )

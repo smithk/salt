@@ -1,5 +1,7 @@
 # SALT — Suggest A Learner for Tabular data
 
+<img src="docs/logo.png" alt="" width="240" align="right">
+
 Point it at a table. It searches across algorithms and their hyperparameters
 and hands back a fitted model, a ranked table of what worked, and what the
 accuracy costs to serve.
@@ -54,8 +56,7 @@ That takes **about two and a half minutes** on 16 cores. Add `-o results.csv`
 to keep the table.
 
 Every dataset is fetched, task-detected, preprocessed, searched across all 13
-learners, and scored on a holdout it never saw. Nothing lands in the
-repository — see [Benchmarks](#benchmarks) for the larger suites.
+learners, and scored on a holdout it never saw. See [Benchmarks](#benchmarks) for the larger suites.
 
 ## Your own data
 
@@ -134,6 +135,11 @@ searching rather than defaulting to one favourite. Note also that a 20-second
 budget buys 817 trials on `diabetes` and 58 on `spambase` — the same wall-clock
 against very different per-trial costs.
 
+> This run predates early stopping and warm-starting, both now on by default.
+> The point it makes — that learners win on different data, and that per-trial
+> cost varies by an order of magnitude — is unaffected, but the trial counts
+> are no longer what you would see today. Due a refresh.
+
 The cache lives at `~/.cache/saltml/benchmarks` (override with `SALTML_CACHE`)
 and stores Parquet, so column types survive the round trip.
 
@@ -164,6 +170,22 @@ a **focus** phase running Optuna TPE over the families still in contention.
 and scored exactly once at the end. Cross-validation scores are optimistic
 because they are what the search optimised against; the holdout number is the
 honest one, and both are reported.
+
+**Hopeless trials are stopped early.** Folds are evaluated in chunks, and a
+configuration already losing after the first chunk is abandoned rather than
+carried to the last fold. Because folds are still evaluated in parallel within
+a chunk, this costs none of the parallelism it would seem to. Turn it off with
+`--pruner none`.
+
+**The search starts from configurations already known to be strong** — a
+few-hundred-tree forest, boosting at a small learning rate — instead of from
+the prior. They are ordinary trials that must earn their score like any other;
+the gain is a better starting point, not a shortcut past measurement.
+
+**`--ensemble` combines the best trials instead of keeping only the winner.**
+Members are chosen greedily on out-of-fold predictions, never on the holdout,
+and a model that adds nothing is simply not selected — on some datasets the
+result is a single model, which is the honest answer.
 
 Full rationale, including the contention rule and why the budget overshoots:
 [docs/design.md](docs/design.md).
@@ -217,7 +239,8 @@ encoding a category would receive.
 saltml fit DATA [--target COL] [--task classification|regression]
                 [--categorical COLS] [--time 10m | --trials N]
                 [--metric M] [--learners a,b] [--folds K] [--holdout F]
-                [--sampler tpe|random|hypercube] [--jobs N]
+                [--sampler tpe|tpe-mv|random|hypercube]
+                [--pruner median|asha|hyperband|none] [--ensemble] [--jobs N]
                 [--top N] [-o model.joblib] [-q]
 
 saltml learners [--task ...]
@@ -225,11 +248,13 @@ saltml learners [--task ...]
 saltml bench list
 saltml bench fetch SUITE|all [--refresh]
 saltml bench run SUITE [--task ...] [--time D | --trials N] [--learners a,b]
-                       [--folds K] [--sampler S] [--jobs N] [-o results.csv]
+                       [--folds K] [--sampler S] [--pruner P] [--jobs N]
+                       [-o results.csv]
 ```
 
 Defaults: `balanced_accuracy` for classification, `r2` for regression, a
-60 second budget, 5 folds, 25% holdout, all cores.
+60 second budget, 5 folds, 25% holdout, all cores, `--sampler tpe`,
+`--pruner median`, and warm-starting on. Ensembling is opt-in.
 
 ## Troubleshooting
 
@@ -250,9 +275,6 @@ registering at [ux.priorlabs.ai](https://ux.priorlabs.ai) and setting
 **A run took far longer than `--time`.** Expected. The budget is per dataset,
 and a trial already running cannot be interrupted, so one slow learner
 overshoots. Runs print elapsed against requested.
-
-**`--sampler hypercube` refuses.** Not ported yet — see
-[History](#history). Use `tpe` or `random`.
 
 **Scores look impossibly good.** Check for a leaked identifier column, and
 compare the cross-validation score against the holdout: a large gap between
@@ -286,10 +308,30 @@ conditional-parameter-space machinery with Optuna and modern scikit-learn.
 11,600 lines of Python became about 2,500, plus 1,100 lines of tests where
 there were none that ran.
 
-The original **shrinking-hypercube optimiser is not yet ported**; `--sampler
-hypercube` says so rather than pretending. Restoring it, and benchmarking it
-against TPE across the suites above, is the outstanding piece of work — see
-[docs/design.md](docs/design.md#what-is-not-ported).
+The original **shrinking-hypercube optimiser has been ported** and is available
+as `--sampler hypercube`. Benchmarking it was the point of building the suites
+above, and the answer is no: TPE beats it. Across `cc18-lite` and `ctr23-lite`
+it ranks last of three, and in its faithful 1:1 form it lost to *uniform random
+sampling* on 10 of 11 classification tasks.
+
+The reason turned out to be a defect rather than the idea. The original built
+its box around the **first** completed trial under a signature — one random
+draw — and then confined sampling to 5% of each range, shrinking further on
+every draw that failed to beat it. There was no exploration phase at all, so a
+mediocre first draw was polished for the rest of the budget. Drawing 20 trials
+from the prior first and building the box around the best of them beats the
+faithful port on 10 of 12 measured cells and closes most of the gap to TPE,
+though it does not overtake it. That warm-up is on by default; `--sampler
+hypercube` gives you the fixed version, and `n_startup_trials=0` gives you 2014.
+
+One idea that sounds obvious and measured worse: letting TPE pick the learner
+while the box tunes its continuous parameters. It seems to combine each
+method's strength, and it loses to warm-up alone — TPE commits to a learner on
+the evidence of early trials whose configurations are still poor, and cannot
+back out. Kept as an option, off by default.
+
+Details and the deviations from 2014 in
+[docs/design.md](docs/design.md#the-shrinking-hypercube).
 
 The 2014 implementation is preserved at the `v0.1-2014` tag and on the `master`
 branch.

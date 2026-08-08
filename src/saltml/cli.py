@@ -65,8 +65,13 @@ def _build_parser() -> argparse.ArgumentParser:
     tuning.add_argument("--holdout", type=float, default=0.25,
                         help="fraction withheld for a final honest score (0 to disable)")
     tuning.add_argument("--sampler", default="tpe",
-                        choices=["tpe", "random", "hypercube"],
+                        choices=["tpe", "tpe-mv", "random", "hypercube"],
                         help="search strategy")
+    tuning.add_argument("--pruner", default="median",
+                        choices=["none", "median", "asha", "hyperband"],
+                        help="stop hopeless trials early instead of finishing every fold")
+    tuning.add_argument("--ensemble", action="store_true",
+                        help="combine the best trials instead of keeping only the winner")
     tuning.add_argument("--jobs", type=int, default=-1,
                         help="parallel cross-validation folds (-1 for all cores)")
     tuning.add_argument("--seed", type=int, default=0)
@@ -99,7 +104,9 @@ def _build_parser() -> argparse.ArgumentParser:
     trial.add_argument("--trials", type=int, help="trials per dataset")
     trial.add_argument("--learners", help="comma-separated subset to consider")
     trial.add_argument("--sampler", default="tpe",
-                       choices=["tpe", "random", "hypercube"])
+                       choices=["tpe", "tpe-mv", "random", "hypercube"])
+    trial.add_argument("--pruner", default="median",
+                       choices=["none", "median", "asha", "hyperband"])
     trial.add_argument("--folds", type=int, default=5)
     trial.add_argument("--jobs", type=int, default=-1)
     trial.add_argument("--seed", type=int, default=0)
@@ -185,6 +192,7 @@ def _bench_run(args: argparse.Namespace) -> int:
                 timeout=args.time,
                 folds=args.folds,
                 sampler=args.sampler,
+                pruner=args.pruner,
                 n_jobs=args.jobs,
                 seed=args.seed,
             )
@@ -262,6 +270,8 @@ def _run_fit(args: argparse.Namespace) -> int:
         folds=args.folds,
         holdout=args.holdout,
         sampler=args.sampler,
+        pruner=args.pruner,
+        ensemble=args.ensemble,
         n_jobs=args.jobs,
         seed=args.seed,
         progress=progress,

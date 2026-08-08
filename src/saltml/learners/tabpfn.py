@@ -22,6 +22,7 @@ works with either.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from ..task import Task
@@ -36,6 +37,14 @@ log = logging.getLogger("saltml")
 MAX_SAMPLES = 10_000
 MAX_FEATURES = 500
 MAX_CLASSES = 10
+
+#: Without a GPU, TabPFN refuses outright above this many samples rather than
+#: merely running slowly. This bites in a way the pre-training limit does not:
+#: cross-validation fits on a fraction of the data and can stay under the
+#: limit, so every trial succeeds and TabPFN can *win* the search — and then
+#: the final refit on the whole training split crosses the limit and takes the
+#: entire run down with it. Excluding it up front is the honest outcome.
+CPU_MAX_SAMPLES = 1_000
 
 
 def tabpfn_available() -> bool:
@@ -54,7 +63,33 @@ def _encoded_width(dataset: Any) -> int:
     return width
 
 
+def _on_cpu() -> bool:
+    """Whether TabPFN would run on CPU, and so enforce its small-data limit.
+
+    The limit can be waived with ``TABPFN_ALLOW_CPU_LARGE_DATASET=1``; taking
+    the user at their word there means they accept the speed.
+    """
+    if os.environ.get("TABPFN_ALLOW_CPU_LARGE_DATASET") == "1":
+        return False
+    try:
+        import torch
+    except Exception:  # pragma: no cover - torch ships with tabpfn
+        return True
+    if torch.cuda.is_available():
+        return False
+    mps = getattr(getattr(torch, "backends", None), "mps", None)
+    return not (mps is not None and mps.is_available())
+
+
 def _applies(dataset: Any) -> str | None:
+    # `applies` runs after the holdout split, so this sees exactly the rows the
+    # final refit will be given — which is the fit that trips the limit.
+    if _on_cpu() and dataset.n_samples > CPU_MAX_SAMPLES:
+        return (
+            f"{dataset.n_samples:,} samples exceeds TabPFN's {CPU_MAX_SAMPLES:,} limit "
+            f"on CPU (use a GPU, or set TABPFN_ALLOW_CPU_LARGE_DATASET=1 to accept "
+            f"the speed)"
+        )
     if dataset.n_samples > MAX_SAMPLES:
         return f"{dataset.n_samples:,} samples exceeds TabPFN's {MAX_SAMPLES:,} limit"
     width = _encoded_width(dataset)

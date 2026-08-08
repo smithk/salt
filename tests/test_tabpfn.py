@@ -16,10 +16,12 @@ import saltml
 from saltml.data import load
 from saltml.learners import REGISTRY, applicable, resolve
 from saltml.learners.tabpfn import (
+    CPU_MAX_SAMPLES,
     MAX_CLASSES,
     MAX_FEATURES,
     MAX_SAMPLES,
     TABPFN_LEARNERS,
+    _on_cpu,
     tabpfn_available,
 )
 from saltml.task import Task
@@ -56,6 +58,31 @@ def test_too_many_samples_is_excluded():
     assert dataset.n_samples > MAX_SAMPLES
     reason = CLASSIFIER.excluded_for(dataset)
     assert reason is not None and "samples" in reason
+
+
+def test_cpu_sample_limit_excludes_before_the_final_refit_can_fail(monkeypatch):
+    """The failure this prevents is subtle: cross-validation fits on a fraction
+    of the data and stays under TabPFN's CPU limit, so every trial succeeds and
+    TabPFN can win the search — and then the refit on the full training split
+    crosses the limit and raises, losing the whole run.
+    """
+    monkeypatch.setattr("saltml.learners.tabpfn._on_cpu", lambda: True)
+    dataset = load(_frame(n_samples=CPU_MAX_SAMPLES + 500), warn_suspicious=False)
+    reason = CLASSIFIER.excluded_for(dataset)
+    assert reason is not None and "CPU" in reason
+    # Well under the pre-training limit, which is why that check missed it.
+    assert dataset.n_samples < MAX_SAMPLES
+
+
+def test_cpu_limit_does_not_apply_when_a_gpu_is_present(monkeypatch):
+    monkeypatch.setattr("saltml.learners.tabpfn._on_cpu", lambda: False)
+    dataset = load(_frame(n_samples=CPU_MAX_SAMPLES + 500), warn_suspicious=False)
+    assert CLASSIFIER.excluded_for(dataset) is None
+
+
+def test_cpu_limit_can_be_waived_by_environment(monkeypatch):
+    monkeypatch.setenv("TABPFN_ALLOW_CPU_LARGE_DATASET", "1")
+    assert _on_cpu() is False
 
 
 def test_too_many_classes_is_excluded():

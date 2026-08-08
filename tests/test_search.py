@@ -118,6 +118,8 @@ def test_unknown_sampler_is_rejected():
         search(load(IRIS), n_trials=1, sampler="magic")
 
 
-def test_hypercube_sampler_reports_that_it_is_not_ported_yet():
-    with pytest.raises(ValueError, match="not been ported"):
-        search(load(IRIS), n_trials=1, sampler="hypercube")
+def test_hypercube_sampler_runs_a_real_search():
+    result = search(load(IRIS), n_trials=12, folds=3, seed=0, sampler="hypercube")
+    assert result.records
+    assert result.best.score > 0.8
+    assert result.n_failed == 0
