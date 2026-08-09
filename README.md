@@ -111,22 +111,24 @@ saltml bench run ctr23-lite --learners lightgbm,ridge    # compare a subset
 saltml bench run smoke --sampler random                  # what is TPE buying?
 ```
 
-A full `cc18-lite` run, 12 datasets against every learner:
+A full `cc18-lite` run: 12 classification datasets against every learner,
+scored by `balanced_accuracy`. The `task` and `metric` columns the command
+prints are dropped here, since they are the same on every row.
 
 ```
-                         dataset           task    n  features            metric     cv  holdout           best_learner  trials
-                        credit-g classification 1000        20 balanced_accuracy 0.7092  0.6810                    svm     264
-                        diabetes classification  768         8 balanced_accuracy 0.7396  0.7910          decision_tree     832
-                     tic-tac-toe classification  958         9 balanced_accuracy 0.9880  0.9940 hist_gradient_boosting     441
-                         vehicle classification  846        18 balanced_accuracy 0.8365  0.8695                 tabpfn     590
-                        kr-vs-kp classification 3196        36 balanced_accuracy 0.9937  0.9988               lightgbm     197
-                            sick classification 3772        29 balanced_accuracy 0.9640  0.9377          decision_tree     199
-                        spambase classification 4601        57 balanced_accuracy 0.9483  0.9619               lightgbm      91
-                         phoneme classification 5404         5 balanced_accuracy 0.8703  0.9019               catboost     430
-         banknote-authentication classification 1372         4 balanced_accuracy 1.0000  1.0000                    svm     788
-blood-transfusion-service-center classification  748         4 balanced_accuracy 0.7084  0.6643          random_forest     889
-climate-model-simulation-crashes classification  540        20 balanced_accuracy 0.8107  0.8120                    svm     708
-                            ilpd classification  583        10 balanced_accuracy 0.7068  0.7072                    svm     622
+                         dataset    n  features     cv holdout           best_learner  trials
+                        credit-g 1000        20 0.7092  0.6810                    svm     264
+                        diabetes  768         8 0.7396  0.7910          decision_tree     832
+                     tic-tac-toe  958         9 0.9880  0.9940 hist_gradient_boosting     441
+                         vehicle  846        18 0.8365  0.8695                 tabpfn     590
+                        kr-vs-kp 3196        36 0.9937  0.9988               lightgbm     197
+                            sick 3772        29 0.9640  0.9377          decision_tree     199
+                        spambase 4601        57 0.9483  0.9619               lightgbm      91
+                         phoneme 5404         5 0.8703  0.9019               catboost     430
+         banknote-authentication 1372         4 1.0000  1.0000                    svm     788
+blood-transfusion-service-center  748         4 0.7084  0.6643          random_forest     889
+climate-model-simulation-crashes  540        20 0.8107  0.8120                    svm     708
+                            ilpd  583        10 0.7068  0.7072                    svm     622
 ```
 
 Seven different learners win across twelve datasets, which is the argument for
