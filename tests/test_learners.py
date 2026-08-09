@@ -60,6 +60,21 @@ def test_classifier_configurations_fit(name, n_classes):
         _draw_and_fit(learner, dataset, seed)
 
 
+@pytest.mark.parametrize("name", sorted(REGISTRY[Task.CLASSIFICATION]))
+def test_classifier_configurations_fit_string_labels(name):
+    """Class labels are strings in most of the ARFF corpus, and libraries
+    handle that unevenly — XGBoost rejects them outright, and scikit-learn's
+    MLP raises from inside its own early-stopping check because it calls
+    ``np.isnan`` on predicted labels. `make_classification` yields integers,
+    so nothing above catches either one.
+    """
+    learner = REGISTRY[Task.CLASSIFICATION][name]
+    dataset = _dataset(Task.CLASSIFICATION, 3)
+    dataset.y = dataset.y.map({0: "low", 1: "medium", 2: "high"})
+    for seed in range(DRAWS):
+        _draw_and_fit(learner, dataset, seed)
+
+
 @pytest.mark.parametrize("name", sorted(REGISTRY[Task.REGRESSION]))
 def test_regressor_configurations_fit(name):
     learner = REGISTRY[Task.REGRESSION][name]

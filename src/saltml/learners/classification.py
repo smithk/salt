@@ -12,6 +12,7 @@ from sklearn.ensemble import (
 from sklearn.linear_model import LogisticRegression, RidgeClassifier
 from sklearn.naive_bayes import GaussianNB
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.neural_network import MLPClassifier
 from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 
@@ -135,6 +136,73 @@ def _gaussian_nb(s: Space) -> dict[str, Any]:
     return {"var_smoothing": s.float("var_smoothing", 1e-12, 1e-4, log=True)}
 
 
+#: Architectures rather than a free width/depth search. Two numbers that
+#: interact strongly would spend the budget on combinations that are obviously
+#: too small or too slow; this is the range that is worth trying on tabular
+#: data, from a single narrow layer to a modest two-layer net.
+#:
+#: Named as strings rather than tuples because Optuna warns that a categorical
+#: choice should be a plain scalar — tuples work in memory but do not survive a
+#: persistent study.
+_MLP_SHAPES = ["64", "128", "256", "64x64", "128x64", "256x128"]
+
+
+def _mlp_shape(name: str) -> tuple[int, ...]:
+    return tuple(int(width) for width in name.split("x"))
+
+
+class _MLPClassifierWithLabels(MLPClassifier):
+    """MLPClassifier that survives ``early_stopping`` with non-numeric labels.
+
+    With ``early_stopping=True`` scikit-learn scores a held-out slice each
+    iteration through ``_score_with_function``, which guards against a
+    diverged net with ``np.isnan(y_pred)``. On a classifier ``y_pred`` holds
+    class labels, so when those are strings — as they are in most of the ARFF
+    corpus — the guard raises ``TypeError: ufunc 'isnan' not supported`` and
+    every fold fails. Encoding the target to integers inside ``fit`` avoids it
+    and keeps the labels the caller supplied on the way out, the same trick
+    ``_XGBClassifierWithLabels`` uses for a different library's version of the
+    same problem.
+    """
+
+    def fit(self, X: Any, y: Any) -> "_MLPClassifierWithLabels":
+        from sklearn.preprocessing import LabelEncoder
+
+        encoder = LabelEncoder().fit(y)
+        super().fit(X, encoder.transform(y))
+        self._encoder = encoder
+        # Set after fitting: the parent leaves the encoded labels here, and
+        # predict_proba's columns follow this order either way, since
+        # LabelEncoder sorts exactly as the parent does.
+        self.classes_ = encoder.classes_
+        return self
+
+    def predict(self, X: Any) -> Any:
+        return self._encoder.inverse_transform(super().predict(X))
+
+
+def _mlp(s: Space) -> dict[str, Any]:
+    return {
+        "hidden_layer_sizes": _mlp_shape(s.cat("hidden_layer_sizes", _MLP_SHAPES)),
+        # The two that decide whether an MLP works at all on tabular data:
+        # too little regularisation and it memorises, too high a learning rate
+        # and it never settles.
+        "alpha": s.float("alpha", 1e-6, 1e1, log=True),
+        "learning_rate_init": s.float("learning_rate_init", 1e-4, 1e-1, log=True),
+        "batch_size": s.cat("batch_size", [32, 128, "auto"]),
+        # Adam only. The search compares learners, and lbfgs/sgd here would
+        # mostly measure which optimiser suits the budget rather than whether
+        # a neural network suits the data.
+        "solver": "adam",
+        # Stop when a held-out slice stops improving rather than burning the
+        # full iteration count on a net that converged long ago — the same
+        # bargain the pruner makes at the level of trials.
+        "early_stopping": True,
+        "n_iter_no_change": 10,
+        "max_iter": 500,
+    }
+
+
 CLASSIFIERS: list[Learner] = [
     Learner("logistic_regression", Task.CLASSIFICATION, _logistic_factory,
             _logistic_regression, needs_scaling=True),
@@ -149,4 +217,5 @@ CLASSIFIERS: list[Learner] = [
     Learner("knn", Task.CLASSIFICATION, KNeighborsClassifier, _knn,
             needs_scaling=True, seedable=False),
     Learner("gaussian_nb", Task.CLASSIFICATION, GaussianNB, _gaussian_nb, seedable=False),
+    Learner("mlp", Task.CLASSIFICATION, _MLPClassifierWithLabels, _mlp, needs_scaling=True),
 ]

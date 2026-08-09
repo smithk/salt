@@ -257,7 +257,7 @@ def search(
     folds: int = 5,
     sampler: str | optuna.samplers.BaseSampler = "tpe",
     pruner: str | optuna.pruners.BasePruner | None = None,
-    warm_start: bool = True,
+    warm_start: bool = False,
     runner: Runner | None = None,
     seed: int | None = 0,
     progress: Callable[[int, TrialRecord | None], None] | None = None,

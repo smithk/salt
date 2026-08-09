@@ -74,6 +74,12 @@ PORTFOLIO: dict[Task, dict[str, list[dict[str, Any]]]] = {
         "knn": [
             {"n_neighbors": 5, "weights": "uniform", "p": 2},
         ],
+        "mlp": [
+            # Adam's usual starting point, with enough weight decay to matter
+            # on tabular data, where an unregularised net memorises quickly.
+            {"hidden_layer_sizes": "128x64", "alpha": 1e-4,
+             "learning_rate_init": 1e-3, "batch_size": "auto"},
+        ],
     },
     Task.REGRESSION: {
         "hist_gradient_boosting": [
@@ -107,6 +113,10 @@ PORTFOLIO: dict[Task, dict[str, list[dict[str, Any]]]] = {
         ],
         "knn": [
             {"n_neighbors": 5, "weights": "uniform", "p": 2},
+        ],
+        "mlp": [
+            {"hidden_layer_sizes": "128x64", "alpha": 1e-4,
+             "learning_rate_init": 1e-3, "batch_size": "auto"},
         ],
     },
 }

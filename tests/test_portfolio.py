@@ -115,6 +115,15 @@ def test_warm_start_reaches_the_time_budget_path():
     assert any(r.params.get("n_estimators") == 500 for r in surveyed)
 
 
+def test_warm_start_is_off_by_default():
+    """It measured no better than starting cold at two budgets, so it is
+    opt-in. This pins that, since the code reads as though it ought to help."""
+    result = search(
+        load(IRIS), learners=["random_forest"], n_trials=4, folds=3, seed=0, pruner=None
+    )
+    assert all(r.params.get("n_estimators") != 500 for r in result.records)
+
+
 def test_warm_start_can_be_turned_off():
     result = search(
         load(IRIS), learners=["random_forest"], n_trials=4, folds=3,

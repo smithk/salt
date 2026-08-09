@@ -11,11 +11,9 @@ forward pass takes tens. Counting trials treats those as equal units, which
 makes runtime unpredictable and quietly starves the expensive families — which
 on tabular data are often the ones worth having.
 
-The evidence is in any benchmark run. A 20-second budget bought 817 trials on
-`diabetes` and 58 on `spambase`: the same wall-clock against very different
-per-trial costs, which no fixed trial count can express. (Those counts were
-measured before early stopping was added, so both are higher today; the ratio
-between them is the point and it has not moved.)
+The evidence is in any benchmark run. A 20-second budget bought 832 trials on
+`diabetes` and 91 on `spambase`: the same wall-clock against very different
+per-trial costs, which no fixed trial count can express.
 
 A time budget is spent in two phases:
 
@@ -47,6 +45,21 @@ The survey phase is deliberately never pruned. Its fixed slice per learner is
 what measures cost, and cutting a learner short would settle the algorithm
 choice on partial evidence — the opposite of what the survey is for.
 
+**What it buys, measured.** Across four datasets and three seeds at a
+60-second budget, pruning tried **1.18× more configurations** in the same
+wall-clock — 590 to 745 on `concrete`, 470 to 567 on `vehicle`, with 250 of
+800 attempts pruned on `ilpd`. It did **not** improve accuracy: nine of twelve
+cells returned an identical holdout score to the unpruned run. That is the
+honest result and it is not a disappointment — those searches are saturated at
+400+ trials on small datasets, so there was no accuracy left to win. Pruning
+buys search per second, which matters when the budget is tight or the data is
+large enough that trials are scarce; it is not a way to find a better model on
+a dataset the search has already exhausted.
+
+Beware of measuring this with completed-trial counts. Pruning *reduces* them by
+construction, because a pruned trial produces no record — the comparison has to
+be completed plus pruned, or it reads exactly backwards.
+
 One trap worth recording: Optuna signals "stop this trial" by raising
 `TrialPruned`, and the search already caught every exception around
 cross-validation to keep a bad configuration from ending the run. A pruned
@@ -72,6 +85,22 @@ tuning one.
 This is the cheap half of what auto-sklearn calls meta-learning. The expensive
 half, choosing entries by dataset similarity, needs meta-features and a corpus
 of prior runs.
+
+**Off by default, because it was measured and did not pay.** At a 60-second
+budget over four datasets and three seeds it changed nothing: eleven of twelve
+cells returned an identical holdout score, the twelfth was slightly worse. The
+obvious objection is that the budget was too generous for a starting point to
+matter — seven queued configurations against 400-750 trials is under 2% of the
+search — so it was rerun at a 20-second budget over eight learners, where the
+queue is a large share of what each learner ever gets. That was worse: one win,
+nine ties, two losses, mean **-0.006**, with the two losses large (-0.042 and
+-0.029). Trial counts were unchanged, so it is not that the queue is expensive.
+
+Twelve cells cannot prove harm, and the plausible mechanism — early portfolio
+scores raising the pruner's median and cutting off later trials before they
+develop — is a guess. But an option that is on by default should have shown a
+benefit, and across two budgets and 24 cells this one never did. It stays
+available as `warm_start=True`.
 
 Only the phase that *first* sees a learner is warm-started: the survey under a
 time budget, the single study under `--trials`. The focus phase is a separate

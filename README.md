@@ -6,7 +6,7 @@ Point it at a table. It searches across algorithms and their hyperparameters
 and hands back a fitted model, a ranked table of what worked, and what the
 accuracy costs to serve.
 
-Classification and regression, 13 learners each — from linear models to
+Classification and regression, 14 learners each — from linear models to
 gradient-boosted trees to a pre-trained transformer.
 
 ## Install
@@ -88,8 +88,7 @@ and can be forced with `--task`. Reads CSV, TSV, ARFF and Parquet.
 ## Benchmarks
 
 Suites are fetched from [OpenML](https://www.openml.org) on demand into a cache
-outside the repository. Committing a published suite would put hundreds of
-megabytes into git history permanently, and history cannot be shrunk afterwards.
+outside the repository, so the datasets stay out of git.
 
 | Suite | Contents | Approximate run time |
 |---|---|---|
@@ -112,33 +111,28 @@ saltml bench run ctr23-lite --learners lightgbm,ridge    # compare a subset
 saltml bench run smoke --sampler random                  # what is TPE buying?
 ```
 
-A full `cc18-lite` run, 12 datasets against all 13 learners:
+A full `cc18-lite` run, 12 datasets against every learner:
 
 ```
                          dataset           task    n  features            metric     cv  holdout           best_learner  trials
-                        credit-g classification 1000        20 balanced_accuracy 0.7092   0.6810                    svm     296
-                        diabetes classification  768         8 balanced_accuracy 0.7396   0.7910          decision_tree     817
-                     tic-tac-toe classification  958         9 balanced_accuracy 0.9880   0.9940 hist_gradient_boosting     433
-                         vehicle classification  846        18 balanced_accuracy 0.8365   0.8695                 tabpfn     585
-                        kr-vs-kp classification 3196        36 balanced_accuracy 0.9937   0.9988               lightgbm     198
-                            sick classification 3772        29 balanced_accuracy 0.9640   0.9377          decision_tree     181
-                        spambase classification 4601        57 balanced_accuracy 0.9483   0.9619               lightgbm      58
-                         phoneme classification 5404         5 balanced_accuracy 0.8678   0.8981            extra_trees     263
-         banknote-authentication classification 1372         4 balanced_accuracy 1.0000   1.0000                    svm     217
-blood-transfusion-service-center classification  748         4 balanced_accuracy 0.7002   0.6678          random_forest     289
-climate-model-simulation-crashes classification  540        20 balanced_accuracy 0.8107   0.8120                    svm     225
-                            ilpd classification  583        10 balanced_accuracy 0.7068   0.7072                    svm     366
+                        credit-g classification 1000        20 balanced_accuracy 0.7092  0.6810                    svm     264
+                        diabetes classification  768         8 balanced_accuracy 0.7396  0.7910          decision_tree     832
+                     tic-tac-toe classification  958         9 balanced_accuracy 0.9880  0.9940 hist_gradient_boosting     441
+                         vehicle classification  846        18 balanced_accuracy 0.8365  0.8695                 tabpfn     590
+                        kr-vs-kp classification 3196        36 balanced_accuracy 0.9937  0.9988               lightgbm     197
+                            sick classification 3772        29 balanced_accuracy 0.9640  0.9377          decision_tree     199
+                        spambase classification 4601        57 balanced_accuracy 0.9483  0.9619               lightgbm      91
+                         phoneme classification 5404         5 balanced_accuracy 0.8703  0.9019               catboost     430
+         banknote-authentication classification 1372         4 balanced_accuracy 1.0000  1.0000                    svm     788
+blood-transfusion-service-center classification  748         4 balanced_accuracy 0.7084  0.6643          random_forest     889
+climate-model-simulation-crashes classification  540        20 balanced_accuracy 0.8107  0.8120                    svm     708
+                            ilpd classification  583        10 balanced_accuracy 0.7068  0.7072                    svm     622
 ```
 
 Seven different learners win across twelve datasets, which is the argument for
 searching rather than defaulting to one favourite. Note also that a 20-second
-budget buys 817 trials on `diabetes` and 58 on `spambase` — the same wall-clock
+budget buys 832 trials on `diabetes` and 91 on `spambase` — the same wall-clock
 against very different per-trial costs.
-
-> This run predates early stopping and warm-starting, both now on by default.
-> The point it makes — that learners win on different data, and that per-trial
-> cost varies by an order of magnitude — is unaffected, but the trial counts
-> are no longer what you would see today. Due a refresh.
 
 The cache lives at `~/.cache/saltml/benchmarks` (override with `SALTML_CACHE`)
 and stores Parquet, so column types survive the round trip.
@@ -177,10 +171,11 @@ carried to the last fold. Because folds are still evaluated in parallel within
 a chunk, this costs none of the parallelism it would seem to. Turn it off with
 `--pruner none`.
 
-**The search starts from configurations already known to be strong** — a
-few-hundred-tree forest, boosting at a small learning rate — instead of from
-the prior. They are ordinary trials that must earn their score like any other;
-the gain is a better starting point, not a shortcut past measurement.
+**`warm_start=True` seeds the search from configurations already known to be
+strong** — a few-hundred-tree forest, boosting at a small learning rate —
+instead of from the prior. Off by default, and honestly so: across two budgets
+and 24 measured runs it never beat starting cold, and at a short budget it was
+slightly worse. See [docs/design.md](docs/design.md) for the numbers.
 
 **`--ensemble` combines the best trials instead of keeping only the winner.**
 Members are chosen greedily on out-of-fold predictions, never on the holdout,
@@ -190,24 +185,52 @@ result is a single model, which is the honest answer.
 Full rationale, including the contention rule and why the budget overshoots:
 [docs/design.md](docs/design.md).
 
+### Which sampler
+
+`--sampler tpe` is the default and the one to use. `tpe-mv` models parameters
+jointly rather than independently; `random` is the control that tells you what
+the sampler is buying.
+
+`hypercube` is a shrinking-hypercube optimiser — one box per categorical
+signature, expanding on improvement and shrinking otherwise. It is offered
+because it is unusual rather than because it wins: across `cc18-lite` and
+`ctr23-lite` it ranks last of three. In its original 1:1 form it lost to
+*uniform random sampling* on 10 of 11 classification tasks, because it built
+its box around the first completed trial — one random draw — and then confined
+sampling to 5% of each range with no exploration phase at all. Drawing 20
+trials from the prior first and building the box around the best of them beats
+that on 10 of 12 measured cells and closes most of the gap to TPE without
+overtaking it. That warm-up is on by default; `n_startup_trials=0` restores the
+original behaviour.
+
+One variant that sounds obviously right and measured worse: letting TPE choose
+the learner while the box tunes its continuous parameters. TPE commits to a
+learner on the evidence of early trials whose configurations are still poor,
+and cannot back out. Available as `categorical="tpe"`, off by default.
+
+Mechanism and measurements in
+[docs/design.md](docs/design.md#the-shrinking-hypercube).
+
 ## Accuracy vs prediction cost
 
 The best model and the model you should deploy are often different. SALT
 measures fit cost and prediction cost separately for every trial and reports
 the frontier — configurations beaten on neither accuracy nor speed:
 
-```
-Accuracy vs prediction cost (nothing here is beaten on both):
-    learner     r2  predict_ms/1k  fit_ms
-        svr 0.5137          29.99     6.0
-      lasso 0.5066          23.22     4.4
-elastic_net 0.5064          22.80     4.4
-```
+| learner | r2 | predict_ms/1k | on the frontier |
+|---|---|---|---|
+| `svr` | 0.5137 | 29.99 | yes — most accurate |
+| `lasso` | 0.5066 | 23.22 | yes |
+| `elastic_net` | 0.5064 | 22.80 | yes — cheapest |
+| `tabpfn` | 0.5101 | ~12,000 | **no** — less accurate than `svr` *and* ~400× dearer to serve |
 
-On that dataset `tabpfn` scored 0.5101 — within 0.8% of the winner — at
-**12,000 ms/1k, some 400× the serving cost**. A single-winner answer cannot
-express that. `result.search.recommended()` returns the cheapest model within
-1% of the best, which is usually the honest answer.
+The command prints only the frontier rows (`svr`, `lasso`, `elastic_net`) plus
+a `fit_ms` column; `tabpfn` is shown here because being beaten on both counts
+is the interesting part. It lands within 0.8% of the winner on accuracy, which
+a leaderboard alone would make look like a close second, and costs some 400×
+as much to serve. A single-winner answer cannot express that.
+`result.search.recommended()` returns the cheapest model within 1% of the best,
+which is usually the honest answer.
 
 Prediction cost is per 1,000 rows and includes fixed per-call overhead, so on
 small datasets it has a floor of a few tens of milliseconds. It compares
@@ -215,8 +238,13 @@ learners on one dataset; it is not a latency guarantee.
 
 ## Data formats
 
-Reads CSV, TSV, ARFF and Parquet. **Prefer Parquet**: it keeps column types, so
-categorical columns survive a round trip that CSV flattens.
+Reads CSV, TSV, ARFF and Parquet. **Prefer Parquet where you have the choice.**
+Parquet stores each column's type alongside the data, so a column of category
+labels is still a category column when it is read back. CSV stores only text,
+so those types have to be guessed on load — and a category coded as `1`, `2`,
+`3` is indistinguishable from a measurement, which is how a categorical column
+ends up silently treated as a quantity. See
+[Integer-coded categories](#integer-coded-categories) for the CSV workaround.
 
 ### Integer-coded categories
 
@@ -254,7 +282,7 @@ saltml bench run SUITE [--task ...] [--time D | --trials N] [--learners a,b]
 
 Defaults: `balanced_accuracy` for classification, `r2` for regression, a
 60 second budget, 5 folds, 25% holdout, all cores, `--sampler tpe`,
-`--pruner median`, and warm-starting on. Ensembling is opt-in.
+and `--pruner median`. Warm-starting and ensembling are opt-in.
 
 ## Troubleshooting
 
@@ -288,60 +316,19 @@ If you use SALT in published work, please cite the repository. The
 ```bibtex
 @software{salt,
   title  = {SALT: Suggest A Learner for Tabular data},
-  author = {Bermudez-Chacon, Roger and Smith, Kevin and Horvath, Peter},
+  author = {Smith, Kevin},
   url    = {https://github.com/smithk/salt},
   year   = {2026}
 }
 ```
 
-## History
-
-SALT began in 2013–2014 as a research prototype by Roger Bermudez-Chacon,
-Kevin Smith, and Peter Horvath — a CASH solver (combined algorithm selection
-and hyperparameter optimisation) contemporary with Auto-WEKA. It was written
-before deep learning reshaped the field, in Python 2, against scikit-learn 0.14.
-
-The current version keeps the ideas worth keeping — the two-stage evaluation
-protocol, and searching algorithms and hyperparameters jointly — and replaces
-the hand-built process pool, cluster dispatch, Tkinter interface, and
-conditional-parameter-space machinery with Optuna and modern scikit-learn.
-11,600 lines of Python became about 2,500, plus 1,100 lines of tests where
-there were none that ran.
-
-The original **shrinking-hypercube optimiser has been ported** and is available
-as `--sampler hypercube`. Benchmarking it was the point of building the suites
-above, and the answer is no: TPE beats it. Across `cc18-lite` and `ctr23-lite`
-it ranks last of three, and in its faithful 1:1 form it lost to *uniform random
-sampling* on 10 of 11 classification tasks.
-
-The reason turned out to be a defect rather than the idea. The original built
-its box around the **first** completed trial under a signature — one random
-draw — and then confined sampling to 5% of each range, shrinking further on
-every draw that failed to beat it. There was no exploration phase at all, so a
-mediocre first draw was polished for the rest of the budget. Drawing 20 trials
-from the prior first and building the box around the best of them beats the
-faithful port on 10 of 12 measured cells and closes most of the gap to TPE,
-though it does not overtake it. That warm-up is on by default; `--sampler
-hypercube` gives you the fixed version, and `n_startup_trials=0` gives you 2014.
-
-One idea that sounds obvious and measured worse: letting TPE pick the learner
-while the box tunes its continuous parameters. It seems to combine each
-method's strength, and it loses to warm-up alone — TPE commits to a learner on
-the evidence of early trials whose configurations are still poor, and cannot
-back out. Kept as an option, off by default.
-
-Details and the deviations from 2014 in
-[docs/design.md](docs/design.md#the-shrinking-hypercube).
-
-The 2014 implementation is preserved at the `v0.1-2014` tag and on the `master`
-branch.
-
 ## Licence
 
-**Not yet determined.** `pyproject.toml` currently declares `Proprietary`,
-inherited from the 2014 prototype, and there is no LICENSE file — which means
-default copyright applies and no reuse is permitted. If you intend this to be
-usable by others, add a licence.
+[MIT](LICENSE). Use it, change it, ship it; just keep the copyright notice.
+
+The dependencies are all permissively licensed too (scikit-learn BSD-3-Clause,
+LightGBM MIT, XGBoost and CatBoost Apache-2.0), so nothing here obliges you to
+open-source what you build with it.
 
 ## Contributing
 

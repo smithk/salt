@@ -117,7 +117,7 @@ def fit(
     holdout: float = 0.25,
     sampler: str = "tpe",
     pruner: str | None = "median",
-    warm_start: bool = True,
+    warm_start: bool = False,
     ensemble: bool = False,
     n_jobs: int = -1,
     seed: int | None = 0,
