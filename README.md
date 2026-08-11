@@ -85,6 +85,13 @@ model.predict(pd.read_csv("new_rows.csv"))
 The target defaults to the last column. Task type is detected from the target
 and can be forced with `--task`. Reads CSV, TSV, ARFF and Parquet.
 
+Some targets are genuinely both. A rating scale — 1–5 stars, 0–20 grades —
+can be classified, keeping the levels distinct and counting every mistake
+alike, or regressed, using the ordering so that being one level out is a
+smaller error than being five. Neither is wrong and they do not score the
+same, so SALT says which one it picked and leaves the choice to you rather
+than deciding quietly.
+
 ## Benchmarks
 
 Suites are fetched from [OpenML](https://www.openml.org) on demand into a cache

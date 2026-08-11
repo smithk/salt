@@ -60,6 +60,13 @@ Then add it to the module's list. The registry picks it up, and
 fitting them on binary and multiclass data — which is where you find out that
 your solver cannot do multiclass, or that your library rejects string labels.
 
+If the learner exists for both tasks, put the shared part of its space in
+`src/saltml/learners/spaces.py` and add only what is task-specific in the task
+module — `class_weight` for a classifier, `epsilon` for an SVR. A forest wants
+the same number of trees whichever target it is fitted against, and these were
+duplicated by hand once and quietly diverged. `test_shared_spaces_do_not_drift_apart`
+fails if the two sides stop agreeing.
+
 Flags on `Learner`:
 
 | Flag | Use |

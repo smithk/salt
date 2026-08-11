@@ -40,6 +40,12 @@ _MIN_ROWS_PER_LABEL = 3
 # querying: it may be a code rather than a measurement.
 _SUSPICIOUS_LEVELS = 12
 
+# An integer target running over consecutive levels — ratings 1-5, grades
+# 0-20 — is a rating scale, and a rating scale is genuinely both tasks. Below
+# this many levels the ordering carries too little to regress on and it is
+# just class labels, so the query would only be noise.
+_ORDINAL_MIN_LEVELS = 5
+
 
 @dataclass
 class Dataset:
@@ -119,6 +125,33 @@ def detect_task(y: pd.Series) -> Task:
     if looks_integral and few_enough and well_populated:
         return Task.CLASSIFICATION
     return Task.REGRESSION
+
+
+def looks_ordinal(y: pd.Series) -> bool:
+    """Whether a target is a rating scale rather than clearly one task.
+
+    The signature is an integer column whose values run consecutively over
+    their range: 1-5 stars, 0-20 grades, a 1-10 severity score. Those are
+    legitimately either task — classification keeps the levels distinct and
+    scores every mistake alike, regression uses the ordering and treats being
+    one level out as a smaller error than being five — and which is better is
+    an empirical question, not something a heuristic can settle.
+
+    Arbitrary class codes usually fail the consecutive test, and anything with
+    fewer than ``_ORDINAL_MIN_LEVELS`` levels is treated as plain labels.
+    """
+    if not is_numeric(y):
+        return False
+    values = y.dropna()
+    if values.empty:
+        return False
+    if not bool(np.allclose(values, np.round(values))):
+        return False
+    n_unique = values.nunique()
+    if n_unique < _ORDINAL_MIN_LEVELS:
+        return False
+    span = int(values.max()) - int(values.min()) + 1
+    return span == n_unique
 
 
 class DatasetError(ValueError):
@@ -331,6 +364,19 @@ def load(
             )
 
     resolved = Task(task) if task is not None else detect_task(y)
+    # Only worth saying when the task was inferred: if it was passed in, the
+    # caller has already answered the question.
+    if warn_suspicious and task is None and looks_ordinal(y):
+        instead = (
+            Task.REGRESSION if resolved is Task.CLASSIFICATION else Task.CLASSIFICATION
+        )
+        log.warning(
+            "Column %r holds %d consecutive whole numbers, which reads as a rating "
+            "scale. It is being treated as %s; %s is equally defensible and can score "
+            "quite differently, since only one of them uses the ordering. Pass "
+            "task=%r (CLI: --task %s) to choose.",
+            target_name, y.nunique(), resolved, instead, str(instead), instead,
+        )
     if resolved is Task.CLASSIFICATION:
         y = y.astype("category")
     else:

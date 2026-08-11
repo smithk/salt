@@ -15,6 +15,7 @@ from sklearn.datasets import make_classification, make_regression
 
 from saltml.data import load
 from saltml.learners import REGISTRY, for_task, resolve
+from saltml.learners.base import Space
 from saltml.search import build_pipeline
 from saltml.task import Task
 
@@ -81,6 +82,48 @@ def test_regressor_configurations_fit(name):
     dataset = _dataset(Task.REGRESSION)
     for seed in range(DRAWS):
         _draw_and_fit(learner, dataset, seed)
+
+
+def _declared(task, name, samples=40):
+    """Every parameter a learner can declare, with its distribution."""
+    learner = REGISTRY[task][name]
+    study = optuna.create_study(sampler=optuna.samplers.RandomSampler(seed=0))
+    declared = {}
+    for _ in range(samples):
+        trial = study.ask()
+        learner.space(Space(trial, ""))
+        declared.update(trial.distributions)
+    return declared
+
+
+@pytest.mark.parametrize(
+    "name,task_only",
+    [
+        ("random_forest", {"class_weight"}),
+        ("extra_trees", {"class_weight"}),
+        ("hist_gradient_boosting", set()),
+        ("decision_tree", {"class_weight", "criterion"}),
+        ("knn", set()),
+        ("mlp", set()),
+    ],
+)
+def test_shared_spaces_do_not_drift_apart(name, task_only):
+    """The reason `learners/spaces.py` exists.
+
+    A forest wants the same number of trees and the same leaf size whichever
+    target it is fitted against, so both tasks draw those from one definition.
+    These were duplicated by hand once and had already diverged in small ways;
+    this fails if that starts happening again.
+    """
+    classification = _declared(Task.CLASSIFICATION, name)
+    regression = _declared(Task.REGRESSION, name)
+
+    assert set(classification) - set(regression) == task_only
+    assert set(regression) - set(classification) == set()
+    for shared in set(classification) & set(regression):
+        assert classification[shared] == regression[shared], (
+            f"{name}.{shared} differs between tasks"
+        )
 
 
 def test_registry_names_are_unique_per_task():

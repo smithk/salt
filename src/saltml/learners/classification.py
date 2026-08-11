@@ -17,6 +17,7 @@ from sklearn.svm import SVC
 from sklearn.tree import DecisionTreeClassifier
 
 from ..task import Task
+from . import spaces
 from .base import Learner, Space
 
 __all__ = ["CLASSIFIERS"]
@@ -77,78 +78,37 @@ def _ridge_classifier(s: Space) -> dict[str, Any]:
     }
 
 
+def _class_weight(s: Space) -> Any:
+    """Every classifier here can rebalance; no regressor has the notion."""
+    return s.cat("class_weight", [None, "balanced"])
+
+
 def _forest(s: Space) -> dict[str, Any]:
-    params: dict[str, Any] = {
-        "n_estimators": s.int("n_estimators", 100, 800, log=True),
-        "max_features": s.cat("max_features", ["sqrt", "log2", None]),
-        "min_samples_leaf": s.int("min_samples_leaf", 1, 20),
-        "class_weight": s.cat("class_weight", [None, "balanced"]),
-        "n_jobs": 1,  # parallelism is spent on folds, not inside one fit
-    }
-    # Unlimited depth is the useful default, so only draw a depth when limiting.
-    if s.cat("limit_depth", [False, True]):
-        params["max_depth"] = s.int("max_depth", 2, 32)
-    return params
+    return {**spaces.forest(s), "class_weight": _class_weight(s)}
 
 
 def _hist_gradient_boosting(s: Space) -> dict[str, Any]:
-    return {
-        "learning_rate": s.float("learning_rate", 0.01, 0.5, log=True),
-        "max_iter": s.int("max_iter", 50, 500, log=True),
-        "max_leaf_nodes": s.int("max_leaf_nodes", 15, 255, log=True),
-        "min_samples_leaf": s.int("min_samples_leaf", 5, 100, log=True),
-        "l2_regularization": s.float("l2_regularization", 1e-8, 1.0, log=True),
-    }
+    return spaces.hist_gradient_boosting(s)
 
 
 def _decision_tree(s: Space) -> dict[str, Any]:
     return {
+        **spaces.decision_tree(s),
         "criterion": s.cat("criterion", ["gini", "entropy"]),
-        "max_depth": s.int("max_depth", 2, 32),
-        "min_samples_leaf": s.int("min_samples_leaf", 1, 20),
-        "class_weight": s.cat("class_weight", [None, "balanced"]),
+        "class_weight": _class_weight(s),
     }
 
 
 def _svc(s: Space) -> dict[str, Any]:
-    kernel = s.cat("kernel", ["rbf", "linear"])
-    params: dict[str, Any] = {
-        "kernel": kernel,
-        "C": s.float("C", 1e-3, 1e3, log=True),
-        "class_weight": s.cat("class_weight", [None, "balanced"]),
-        "cache_size": 500,
-    }
-    if kernel == "rbf":
-        params["gamma"] = s.float("gamma", 1e-5, 1e1, log=True)
-    return params
+    return {**spaces.kernel_machine(s), "class_weight": _class_weight(s)}
 
 
 def _knn(s: Space) -> dict[str, Any]:
-    return {
-        "n_neighbors": s.int("n_neighbors", 1, 50, log=True),
-        "weights": s.cat("weights", ["uniform", "distance"]),
-        "p": s.cat("p", [1, 2]),
-        "n_jobs": 1,
-    }
+    return spaces.knn(s)
 
 
 def _gaussian_nb(s: Space) -> dict[str, Any]:
     return {"var_smoothing": s.float("var_smoothing", 1e-12, 1e-4, log=True)}
-
-
-#: Architectures rather than a free width/depth search. Two numbers that
-#: interact strongly would spend the budget on combinations that are obviously
-#: too small or too slow; this is the range that is worth trying on tabular
-#: data, from a single narrow layer to a modest two-layer net.
-#:
-#: Named as strings rather than tuples because Optuna warns that a categorical
-#: choice should be a plain scalar — tuples work in memory but do not survive a
-#: persistent study.
-_MLP_SHAPES = ["64", "128", "256", "64x64", "128x64", "256x128"]
-
-
-def _mlp_shape(name: str) -> tuple[int, ...]:
-    return tuple(int(width) for width in name.split("x"))
 
 
 class _MLPClassifierWithLabels(MLPClassifier):
@@ -182,25 +142,7 @@ class _MLPClassifierWithLabels(MLPClassifier):
 
 
 def _mlp(s: Space) -> dict[str, Any]:
-    return {
-        "hidden_layer_sizes": _mlp_shape(s.cat("hidden_layer_sizes", _MLP_SHAPES)),
-        # The two that decide whether an MLP works at all on tabular data:
-        # too little regularisation and it memorises, too high a learning rate
-        # and it never settles.
-        "alpha": s.float("alpha", 1e-6, 1e1, log=True),
-        "learning_rate_init": s.float("learning_rate_init", 1e-4, 1e-1, log=True),
-        "batch_size": s.cat("batch_size", [32, 128, "auto"]),
-        # Adam only. The search compares learners, and lbfgs/sgd here would
-        # mostly measure which optimiser suits the budget rather than whether
-        # a neural network suits the data.
-        "solver": "adam",
-        # Stop when a held-out slice stops improving rather than burning the
-        # full iteration count on a net that converged long ago — the same
-        # bargain the pruner makes at the level of trials.
-        "early_stopping": True,
-        "n_iter_no_change": 10,
-        "max_iter": 500,
-    }
+    return spaces.mlp(s)
 
 
 CLASSIFIERS: list[Learner] = [
